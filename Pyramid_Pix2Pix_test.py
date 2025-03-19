@@ -50,9 +50,18 @@ class BCIDataset(Dataset):
 
         return he_image, ihc_image
 
-# ✅ Find the latest checkpoint
-def find_latest_checkpoint(checkpoint_dir):
-    """Finds the latest generator checkpoint."""
+# ✅ Return a specific checkpoint or the latest one
+def return_checkpoint(checkpoint_dir, epoch=None):
+    """
+    Returns the checkpoint path for a specific epoch or the latest checkpoint.
+    
+    Args:
+        checkpoint_dir (str): Directory containing checkpoint files.
+        epoch (int, optional): The epoch number of the desired checkpoint. If None, returns the latest checkpoint.
+    
+    Returns:
+        str: Path to the checkpoint file.
+    """
     checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "checkpoint_epoch_*.pth"))
 
     if not checkpoint_files:
@@ -61,13 +70,24 @@ def find_latest_checkpoint(checkpoint_dir):
 
     def extract_epoch(filename):
         match = re.search(r"checkpoint_epoch_(\d+).pth", filename)
-        return int(match.group(1)) if match else 0
+        return int(match.group(1)) if match else None
 
-    checkpoint_files.sort(key=extract_epoch, reverse=True)
-    latest_checkpoint = checkpoint_files[0]
+    checkpoint_files.sort(key=extract_epoch, reverse=True)  # Sort by epoch in descending order
 
-    print(f"✅ Loading generator checkpoint: {latest_checkpoint}")
-    return latest_checkpoint
+    if epoch is None:
+        # Return the latest checkpoint
+        latest_checkpoint = checkpoint_files[0]
+        print(f"✅ Loading latest generator checkpoint: {latest_checkpoint}")
+        return latest_checkpoint
+
+    # Look for a specific epoch checkpoint
+    for checkpoint in checkpoint_files:
+        if f"checkpoint_epoch_{epoch}.pth" in checkpoint:
+            print(f"✅ Loading generator checkpoint for epoch {epoch}: {checkpoint}")
+            return checkpoint
+
+    print(f"⚠️ Checkpoint for epoch {epoch} not found.")
+    return None
 
 # ✅ Load the trained generator model
 def load_generator(generator, checkpoint_path):
@@ -178,10 +198,10 @@ def test_generator(generator, test_dataloader, save_path):
 
 # ✅ Run Testing
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+checkpoint = return_checkpoint(checkpoint_dir, 10)
 
 generator = ResNetGenerator().to(device)
-generator = load_generator(generator, latest_checkpoint)
+generator = load_generator(generator, checkpoint)
 
 test_dataset = BCIDataset(he_dir=he_registered_test_path, ihc_dir=ihc_resized_test_path, transform=transforms.ToTensor())
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)

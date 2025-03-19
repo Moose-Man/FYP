@@ -1,0 +1,14 @@
+(Transform "EulerTransform")
+(NumberOfResolutions 4)
+(FinalBSplineInterpolationOrder 1)
+(MaximumNumberOfIterations 500)
+
+(Registration "MultiResolutionRegistration")
+(ImageSampler "Random")
+(NumberOfHistogramBins 32)
+
+(Metric "AdvancedMattesMutualInformation")
+(Optimizer "AdaptiveStochasticGradientDescent")
+(MaximumStepLength 1.0)
+(RelaxationFactor 0.9)
+(NumberOfSamples 2000)

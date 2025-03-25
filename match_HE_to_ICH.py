@@ -53,7 +53,7 @@ remaining_ihc_test = len([f for f in os.listdir(ihc_resized_test_path) if f.ends
 print(f"✅ Final HE count: {remaining_he_test}")
 print(f"✅ Final IHC count: {remaining_ihc_test}")
 
-if remaining_he == remaining_ihc:
+if remaining_he_test == remaining_ihc_test:
     print("🎯 Dataset is now perfectly matched! (test)")
 else:
     print("⚠️ There may still be a mismatch—check manually! (test)")

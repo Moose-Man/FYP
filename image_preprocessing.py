@@ -2,14 +2,14 @@ import os
 import numpy as np
 import cv2
 import subprocess
-import argparse
+import random
 from PIL import Image
 from tqdm import tqdm  # ✅ Progress Bar
 import matplotlib.pyplot as plt
 import SimpleITK as sitk
 
 # CONFIGURATION
-RESIZE_TO = (128, 128)  # Change to (512, 512) if needed
+RESIZE_TO = (256, 256)  # Change to (512, 512) if needed
 
 # Train Paths
 he_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE\train"
@@ -50,16 +50,53 @@ def resize_and_save(input_path, output_path, size, label):
             continue  # Skip if already resized
 
         img = Image.open(input_file)
+
+        # resize 
         img = img.resize(size, Image.LANCZOS)
+
+        # crop image down randomly
+        left = random.randint(0, 256 - 128)
+        top = random.randint(0, 256 - 128)
+        img = img.crop((left, top, left + 128, top + 128))
+
         img.save(output_file)
 
-# Resize H&E and IHC images
-resize_and_save(he_train_path, he_resized_path, RESIZE_TO, "H&E")
-resize_and_save(ihc_train_path, ihc_resized_path, RESIZE_TO, "IHC")
+# Step 1B: Resize test images to 256x256 and center crop to 128x128
+def resize_and_center_crop(input_path, output_path, label):
+    """
+    Resizes test images to 256x256, then applies center crop to 128x128.
+    This ensures deterministic preprocessing for evaluation.
+    """
+    files = [f for f in os.listdir(input_path) if f.endswith(".png") or f.endswith(".jpg")]
 
-# Resize IHC test images
-resize_and_save(ihc_test_path, ihc_resized_test_path, RESIZE_TO, "IHC Test")
-resize_and_save(ihc_test_path, he_resized_test_path, RESIZE_TO, "HE Test")
+    for filename in tqdm(files, desc=f"Center-cropping {label} test images", ncols=80):
+        input_file = os.path.join(input_path, filename)
+        output_file = os.path.join(output_path, filename)
+
+        if os.path.exists(output_file):
+            continue  # Skip if already processed
+
+        img = Image.open(input_file)
+
+        # Step 1: Resize to 256x256
+        img = img.resize((256, 256), Image.LANCZOS)
+
+        # Step 2: Center crop to 128x128
+        left = (256 - 128) // 2  # = 64
+        top = (256 - 128) // 2   # = 64
+        right = left + 128
+        bottom = top + 128
+        img = img.crop((left, top, right, bottom))
+
+        img.save(output_file)
+
+# # Resize H&E and IHC images
+# resize_and_save(he_train_path, he_resized_path, RESIZE_TO, "H&E")
+# resize_and_save(ihc_train_path, ihc_resized_path, RESIZE_TO, "IHC")
+
+# # Apply center crop preprocessing for test images
+# resize_and_center_crop(ihc_test_path, ihc_resized_test_path, "IHC")
+# resize_and_center_crop(he_test_path, he_resized_test_path, "H&E")
 
 # Detect and remove black borders from image registration
 def remove_black_borders(img, threshold=10):
@@ -97,8 +134,8 @@ def is_misaligned_or_blank(img, threshold_std=15, black_threshold=0.15):
     return std_dev < threshold_std or black_ratio > black_threshold
 
 # Step 2: Elastix Registration
-elastix_exe = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\elastix\elastix.exe"
-elastix_param_file = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\FYP_1\elastix_params.txt"
+elastix_exe = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\elastix\elastix.exe"
+elastix_param_file = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\FYP_1\elastix_params.txt"
 
 def register_images(he_path, ihc_path, output_path, param_file):
     """
@@ -126,7 +163,7 @@ def register_images(he_path, ihc_path, output_path, param_file):
         print(f"⚠️ Warning: Elastix output missing for {he_path}. Skipping...")
         return
 
-    # Convert `.mhd` to `.png`
+    # Convert .mhd to .png
     try:
         img_itk = sitk.ReadImage(transformed_img_path)  # Read .mhd file
         img_array = sitk.GetArrayFromImage(img_itk)
@@ -164,35 +201,35 @@ def register_images(he_path, ihc_path, output_path, param_file):
     except Exception as e:
         print(f"⚠️ Error converting {transformed_img_path}: {e}")
 
-# Register images with progress bar (FOR TRAINING)
-files = [f for f in os.listdir(he_resized_path)]
-for filename in tqdm(files, desc="Registering images", ncols=80):
-    he_img_path = os.path.join(he_resized_path, filename)
-    ihc_img_path = os.path.join(ihc_resized_path, filename)
-    registered_output = os.path.join(he_registered_path, filename)
+# # Register images with progress bar (FOR TRAINING)
+# files = [f for f in os.listdir(he_resized_path)]
+# for filename in tqdm(files, desc="Registering images", ncols=80):
+#     he_img_path = os.path.join(he_resized_path, filename)
+#     ihc_img_path = os.path.join(ihc_resized_path, filename)
+#     registered_output = os.path.join(he_registered_path, filename)
 
-    if os.path.exists(registered_output):
-        continue  # Skip if already registered
+#     if os.path.exists(registered_output):
+#         continue  # Skip if already registered
 
-    try:
-        register_images(he_img_path, ihc_img_path, registered_output, elastix_param_file)
-    except Exception as e:
-        print(f"⚠️ Warning: Skipping {filename} due to error: {e}")
+#     try:
+#         register_images(he_img_path, ihc_img_path, registered_output, elastix_param_file)
+#     except Exception as e:
+#         print(f"⚠️ Warning: Skipping {filename} due to error: {e}")
 
-# Register HE TEST images
-files = [f for f in os.listdir(he_test_path)]
-for filename in tqdm(files, desc="Registering test images", ncols=80):
-    he_img_path = os.path.join(he_resized_test_path, filename)
-    ihc_img_path = os.path.join(ihc_resized_test_path, filename)  # Use resized IHC test images
-    registered_output = os.path.join(he_registered_test_path, filename)
+# # Register HE TEST images
+# files = [f for f in os.listdir(he_test_path)]
+# for filename in tqdm(files, desc="Registering test images", ncols=80):
+#     he_img_path = os.path.join(he_resized_test_path, filename)
+#     ihc_img_path = os.path.join(ihc_resized_test_path, filename)  # Use resized IHC test images
+#     registered_output = os.path.join(he_registered_test_path, filename)
 
-    if os.path.exists(registered_output):
-        continue  # Skip if already registered
+#     if os.path.exists(registered_output):
+#         continue  # Skip if already registered
 
-    try:
-        register_images(he_img_path, ihc_img_path, registered_output, elastix_param_file)
-    except Exception as e:
-        print(f"⚠️ Warning: Skipping {filename} due to error: {e}")
+#     try:
+#         register_images(he_img_path, ihc_img_path, registered_output, elastix_param_file)
+#     except Exception as e:
+#         print(f"⚠️ Warning: Skipping {filename} due to error: {e}")
 
 # Step 3: Gaussian Pyramid Processing (Multi-Scale Representation)
 def gaussian_pyramid(img, levels=3):
@@ -213,39 +250,21 @@ for filename in tqdm(files, desc="Generating Gaussian Pyramid", ncols=80):
     he_image_path = os.path.join(he_registered_path, filename)
 
     img = cv2.imread(he_image_path, cv2.IMREAD_COLOR)
+
     if img is None or img.size == 0:
         print(f"⚠️ Warning: Skipping missing or unreadable image: {filename}")
         continue  # ✅ Skip missing images
 
-    print(f"✅ Processing Gaussian Pyramid for {filename}, Shape: {img.shape}")  # Debugging Output
+    # print(f"✅ Processing Gaussian Pyramid for {filename}, Shape: {img.shape}")  # Debugging Output
+
+    # Apply center crop to 128x128 before pyramid generation
+    h, w, _ = img.shape
+    top = (h - 128) // 2
+    left = (w - 128) // 2
+    img = img[top:top+128, left:left+128]
 
     pyramid = gaussian_pyramid(img, levels=3)
 
     for i, scaled_img in enumerate(pyramid):
         output_file = os.path.join(he_pyramid_path, f"{filename.split('.')[0]}_scale_{i}.png")
         cv2.imwrite(output_file, scaled_img)
-
-# # Step 4: Display Sample (Before & After)
-# sample_he = cv2.imread(os.path.join(he_train_path, '00004_train_1+.png'))
-# resized_sample = cv2.imread(os.path.join(he_resized_path, '00004_train_1+.png'))
-# registered_sample = cv2.imread(os.path.join(he_registered_path, '00004_train_1+.png'))
-# pyramid_sample = cv2.imread(os.path.join(he_pyramid_path, '00004_train_1+_scale_2.png'))
-
-# plt.figure(figsize=(12, 4))
-# plt.subplot(1, 4, 1)
-# plt.title("Original H&E Image")
-# plt.imshow(cv2.cvtColor(sample_he, cv2.COLOR_BGR2RGB))
-
-# plt.subplot(1, 4, 2)
-# plt.title("Resized H&E Image")
-# plt.imshow(cv2.cvtColor(resized_sample, cv2.COLOR_BGR2RGB))
-
-# plt.subplot(1, 4, 3)
-# plt.title("Registered H&E Image")
-# plt.imshow(cv2.cvtColor(registered_sample, cv2.COLOR_BGR2RGB))
-
-# plt.subplot(1, 4, 4)
-# plt.title("Gaussian Pyramid (Scale 2)")
-# plt.imshow(cv2.cvtColor(pyramid_sample, cv2.COLOR_BGR2RGB))
-
-# plt.show()

@@ -5,8 +5,8 @@ import subprocess
 import random
 from PIL import Image
 from tqdm import tqdm  # ✅ Progress Bar
-import matplotlib.pyplot as plt
 import SimpleITK as sitk
+import shutil
 
 # CONFIGURATION
 RESIZE_TO = (256, 256)  # Change to (512, 512) if needed
@@ -16,7 +16,7 @@ he_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC\train"
 he_resized_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
 ihc_resized_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
+he_registered_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
 he_pyramid_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_pyramid\train"
 
 # Test Paths
@@ -36,30 +36,46 @@ os.makedirs(he_resized_test_path, exist_ok=True)
 os.makedirs(he_registered_test_path, exist_ok=True)
 
 # Step 1: Resize Images Before Processing
-def resize_and_save(input_path, output_path, size, label):
+def resize_and_crop_paired(he_input_path, ihc_input_path, he_output_path, ihc_output_path, size=(256, 256), crop_size=(128, 128)):
     """
-    Resize images to a consistent size before processing.
+    Resize and apply identical random crop to paired H&E and IHC images.
+    Ensures that both images in the pair are spatially aligned after processing.
     """
-    files = [f for f in os.listdir(input_path) if f.endswith(".png") or f.endswith(".jpg")]
+    os.makedirs(he_output_path, exist_ok=True)
+    os.makedirs(ihc_output_path, exist_ok=True)
 
-    for filename in tqdm(files, desc=f"Resizing {label} images", ncols=80):
-        input_file = os.path.join(input_path, filename)
-        output_file = os.path.join(output_path, filename)
+    he_files = sorted([f for f in os.listdir(he_input_path) if f.endswith(".png") or f.endswith(".jpg")])
+    ihc_files = sorted([f for f in os.listdir(ihc_input_path) if f.endswith(".png") or f.endswith(".jpg")])
 
-        if os.path.exists(output_file):
-            continue  # Skip if already resized
+    assert len(he_files) == len(ihc_files), "Mismatch: different number of H&E and IHC images!"
+    assert he_files == ihc_files, "Mismatch: H&E and IHC filenames are not aligned!"
 
-        img = Image.open(input_file)
+    for filename in tqdm(he_files, desc="Resizing and cropping paired images", ncols=80):
+        he_in = os.path.join(he_input_path, filename)
+        ihc_in = os.path.join(ihc_input_path, filename)
+        he_out = os.path.join(he_output_path, filename)
+        ihc_out = os.path.join(ihc_output_path, filename)
 
-        # resize 
-        img = img.resize(size, Image.LANCZOS)
+        if os.path.exists(he_out) and os.path.exists(ihc_out):
+            continue  # Skip already processed pairs
 
-        # crop image down randomly
-        left = random.randint(0, 256 - 128)
-        top = random.randint(0, 256 - 128)
-        img = img.crop((left, top, left + 128, top + 128))
+        # Load images
+        he_img = Image.open(he_in).resize(size, Image.LANCZOS)
+        ihc_img = Image.open(ihc_in).resize(size, Image.LANCZOS)
 
-        img.save(output_file)
+        # Random crop (same coords for both)
+        max_left = size[0] - crop_size[0]
+        max_top = size[1] - crop_size[1]
+        left = random.randint(0, max_left)
+        top = random.randint(0, max_top)
+        box = (left, top, left + crop_size[0], top + crop_size[1])
+
+        he_crop = he_img.crop(box)
+        ihc_crop = ihc_img.crop(box)
+
+        # Save
+        he_crop.save(he_out)
+        ihc_crop.save(ihc_out)
 
 # Step 1B: Resize test images to 256x256 and center crop to 128x128
 def resize_and_center_crop(input_path, output_path, label):
@@ -90,13 +106,20 @@ def resize_and_center_crop(input_path, output_path, label):
 
         img.save(output_file)
 
-# # Resize H&E and IHC images
-# resize_and_save(he_train_path, he_resized_path, RESIZE_TO, "H&E")
-# resize_and_save(ihc_train_path, ihc_resized_path, RESIZE_TO, "IHC")
+# Resize H&E and IHC images
+resize_and_crop_paired(
+    he_input_path=he_train_path,
+    ihc_input_path=ihc_train_path,
+    he_output_path=he_resized_path,
+    ihc_output_path=ihc_resized_path,
+    size=(256, 256),
+    crop_size=(128, 128)
+)
 
-# # Apply center crop preprocessing for test images
-# resize_and_center_crop(ihc_test_path, ihc_resized_test_path, "IHC")
-# resize_and_center_crop(he_test_path, he_resized_test_path, "H&E")
+
+# Apply center crop preprocessing for test images
+resize_and_center_crop(ihc_test_path, ihc_resized_test_path, "IHC")
+resize_and_center_crop(he_test_path, he_resized_test_path, "H&E")
 
 # Detect and remove black borders from image registration
 def remove_black_borders(img, threshold=10):
@@ -153,12 +176,12 @@ def register_images(he_path, ihc_path, output_path, param_file):
     ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
-    print(f"Elastix Output:\n{result.stdout}")
+    # print(f"Elastix Output:\n{result.stdout}")
     print(f"Elastix Errors:\n{result.stderr}")
 
     # Locate Elastix output file
     transformed_img_path = os.path.join(output_dir, "result.0.mhd")
-
+    
     if not os.path.exists(transformed_img_path):
         print(f"⚠️ Warning: Elastix output missing for {he_path}. Skipping...")
         return
@@ -175,9 +198,6 @@ def register_images(he_path, ihc_path, output_path, param_file):
         # Normalize & convert to 8-bit
         img_array = cv2.normalize(img_array, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-        img = cv2.normalize(img_array, None, 0, 255, cv2.NORM_MINMAX)
-        img = np.uint8(img)
-
         # Convert to RGB (if grayscale)
         img_rgb = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
 
@@ -190,10 +210,10 @@ def register_images(he_path, ihc_path, output_path, param_file):
             return  # Skip saving this image
         
         # Resize to match original image dimensions
-        cropped_resized_img = cv2.resize(cropped_img, (RESIZE_TO[0], RESIZE_TO[1]), interpolation=cv2.INTER_LINEAR)
+        cropped_resized_img = cv2.resize(cropped_img, (128, 128), interpolation=cv2.INTER_LINEAR)
 
-        # Resize to match original image dimensions
-        img = cv2.resize(img, (RESIZE_TO[0], RESIZE_TO[1]), interpolation=cv2.INTER_LINEAR)
+        # Delete elastix temp output to save disk space
+        shutil.rmtree(output_dir)
 
         # Save as PNG
         cv2.imwrite(output_path, cropped_resized_img)
@@ -246,25 +266,25 @@ def gaussian_pyramid(img, levels=3):
 # Apply multi-scale transformation with progress bar
 files = [f for f in os.listdir(he_registered_path) if os.path.exists(os.path.join(he_registered_path, f))]
 
-for filename in tqdm(files, desc="Generating Gaussian Pyramid", ncols=80):
-    he_image_path = os.path.join(he_registered_path, filename)
+# for filename in tqdm(files, desc="Generating Gaussian Pyramid", ncols=80):
+#     he_image_path = os.path.join(he_registered_path, filename)
 
-    img = cv2.imread(he_image_path, cv2.IMREAD_COLOR)
+#     img = cv2.imread(he_image_path, cv2.IMREAD_COLOR)
 
-    if img is None or img.size == 0:
-        print(f"⚠️ Warning: Skipping missing or unreadable image: {filename}")
-        continue  # ✅ Skip missing images
+#     if img is None or img.size == 0:
+#         print(f"⚠️ Warning: Skipping missing or unreadable image: {filename}")
+#         continue  # ✅ Skip missing images
 
-    # print(f"✅ Processing Gaussian Pyramid for {filename}, Shape: {img.shape}")  # Debugging Output
+#     # print(f"✅ Processing Gaussian Pyramid for {filename}, Shape: {img.shape}")  # Debugging Output
 
-    # Apply center crop to 128x128 before pyramid generation
-    h, w, _ = img.shape
-    top = (h - 128) // 2
-    left = (w - 128) // 2
-    img = img[top:top+128, left:left+128]
+#     # Apply center crop to 128x128 before pyramid generation
+#     h, w, _ = img.shape
+#     top = (h - 128) // 2
+#     left = (w - 128) // 2
+#     img = img[top:top+128, left:left+128]
 
-    pyramid = gaussian_pyramid(img, levels=3)
+#     pyramid = gaussian_pyramid(img, levels=3)
 
-    for i, scaled_img in enumerate(pyramid):
-        output_file = os.path.join(he_pyramid_path, f"{filename.split('.')[0]}_scale_{i}.png")
-        cv2.imwrite(output_file, scaled_img)
+#     for i, scaled_img in enumerate(pyramid):
+#         output_file = os.path.join(he_pyramid_path, f"{filename.split('.')[0]}_scale_{i}.png")
+#         cv2.imwrite(output_file, scaled_img)

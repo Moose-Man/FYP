@@ -18,8 +18,9 @@ print(torch.cuda.is_available())
 
 # Define paths
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints\ver_2"
+he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints\ver_4"
+he_pyramid_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_pyramid\train"
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # DATASET LOADER
@@ -58,13 +59,52 @@ class BCIDataset(Dataset):
 
 # Initialize Transformations
 transform = transforms.Compose([
-    transforms.Resize((128, 128)),
     transforms.ToTensor(),
-    transforms.Normalize([0.5]*3, [0.5]*3)  # Scale [0,1] → [-1,1]
 ])
 
-dataset = BCIDataset(he_dir=he_registered_train_path, ihc_dir=ihc_train_path, transform=transform)
-dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+# MULTI-SCALE LOSS
+
+class BCIPyramidDataset(Dataset):
+    def __init__(self, he_pyramid_dir, ihc_dir, transform=None, levels=3):
+        self.levels = levels
+        self.transform = transform
+        self.he_pyramid_dir = he_pyramid_dir
+        self.ihc_dir = ihc_dir
+
+        self.base_filenames = sorted(list(set(
+            "_".join(f.split("_")[:-2]) for f in os.listdir(he_pyramid_dir) if f.endswith(".png")
+        )), key=lambda x: int(x.split("_")[0]))
+
+        self.ihc_images = sorted(
+            [f for f in os.listdir(ihc_dir) if f.endswith(".png")], key=lambda x: int(x.split("_")[0])
+        )
+
+        assert len(self.base_filenames) == len(self.ihc_images), "Mismatch between HE pyramids and IHC images"
+
+    def __len__(self):
+        return len(self.base_filenames)
+
+    def __getitem__(self, idx):
+        base = self.base_filenames[idx]
+        ihc_path = os.path.join(self.ihc_dir, self.ihc_images[idx])
+
+        ihc_image = Image.open(ihc_path).convert("RGB")
+        he_pyramid = []
+
+        for i in range(self.levels):
+            pyramid_path = os.path.join(self.he_pyramid_dir, f"{base}_scale_{i}.png")
+            img = Image.open(pyramid_path).convert("RGB")
+            if self.transform:
+                img = self.transform(img)
+            he_pyramid.append(img)
+
+        if self.transform:
+            ihc_image = self.transform(ihc_image)
+
+        return he_pyramid, ihc_image
+
+pyramid_dataset = BCIPyramidDataset(he_pyramid_dir=he_pyramid_dir, ihc_dir=ihc_train_path, transform=transform)
+dataloader = DataLoader(pyramid_dataset, batch_size=8, shuffle=True)
 
 # RESNET-9 BLOCKS GENERATOR
 
@@ -170,15 +210,6 @@ discriminator = PatchDiscriminator().to(device)
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
-# MULTI-SCALE LOSS
-
-def gaussian_pyramid(img, levels=3):
-    pyramid = [img]
-    for _ in range(levels):
-        img = F.avg_pool2d(img, kernel_size=2)
-        pyramid.append(img)
-    return pyramid
-
 # TRAINING LOOP
 
 def save_sample_images(epoch, he, fake_ihc, ihc):
@@ -194,22 +225,22 @@ def save_sample_images(epoch, he, fake_ihc, ihc):
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
     plt.title("Input H&E")
-    plt.imshow(he)
+    plt.imshow(he)  
 
     plt.subplot(1, 3, 2)
     plt.title(f"Generated IHC (Epoch {epoch})")
-    plt.imshow(fake_ihc)
+    plt.imshow(fake_ihc) 
 
     plt.subplot(1, 3, 3)
     plt.title("Ground Truth IHC")
-    plt.imshow(ihc)
+    plt.imshow(ihc) 
 
-    output_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints\ver_2"
+    output_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints\ver_3"
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, f"epoch_{epoch}_output.png"))
 
-    plt.pause(10)
-    plt.close()
+    plt.pause(10) 
+    plt.close() 
 
 def save_checkpoint(epoch, generator, discriminator, optimizer_G, optimizer_D, g_loss, d_loss):
     checkpoint = {
@@ -267,41 +298,46 @@ start_epoch = 0  # Default starting epoch
 if latest_checkpoint:
     start_epoch = load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, latest_checkpoint)
 
-epochs = 50
+epochs = 100
 
 perceptual_loss = VGGLoss().to(device)
 
 scaler = GradScaler(device='cuda')
 
 for epoch in range(start_epoch, epochs):
-    for he_img, ihc in dataloader:
+    for he_pyramid, ihc in dataloader:
         ihc = ihc.to(device)
-        he_img = he_img.to(device)
+        he_pyramid = [x.to(device) for x in he_pyramid]
 
-        # Discriminator training
+        # -------------------------------
+        # Discriminator Training
+        # -------------------------------
         with autocast(device_type='cuda'):
-            fake_ihc = generator(he_img)
-            real_labels = torch.ones_like(discriminator(he_img, ihc))
+            fake_ihc = generator(he_pyramid[0])
+            real_labels = torch.ones_like(discriminator(he_pyramid[0], ihc))
             fake_labels = torch.zeros_like(real_labels)
 
-            d_real_loss = criterion_GAN(discriminator(he_img, ihc), real_labels)
-            d_fake_loss = criterion_GAN(discriminator(he_img, fake_ihc.detach()), fake_labels)
+            d_real_loss = criterion_GAN(discriminator(he_pyramid[0], ihc), real_labels)
+            d_fake_loss = criterion_GAN(discriminator(he_pyramid[0], fake_ihc.detach()), fake_labels)
             d_loss = (d_real_loss + d_fake_loss) / 2
 
         optimizer_D.zero_grad()
         scaler.scale(d_loss).backward()
         scaler.step(optimizer_D)
 
-        # Generator training
+        # -------------------------------
+        # Generator Training
+        # -------------------------------
         with autocast(device_type='cuda'):
-            fake_ihc = generator(he_img)
-            g_adv_loss = criterion_GAN(discriminator(he_img, fake_ihc), real_labels)
+            fake_ihc = generator(he_pyramid[0])
+            g_adv_loss = criterion_GAN(discriminator(he_pyramid[0], fake_ihc), real_labels)
 
-            # Now generate pyramid for both fake and real
-            fake_pyramid = gaussian_pyramid(fake_ihc, levels=3)
-            real_pyramid = gaussian_pyramid(he_img, levels=3)
+            # Create Gaussian pyramid of fake image
+            fake_pyramid = [fake_ihc]
+            for _ in range(1, len(he_pyramid)):
+                fake_pyramid.append(F.avg_pool2d(fake_pyramid[-1], kernel_size=2))
 
-            g_multi_loss = sum(F.l1_loss(f, r) for f, r in zip(fake_pyramid, real_pyramid))
+            g_multi_loss = sum(F.l1_loss(f, gt) for f, gt in zip(fake_pyramid, he_pyramid))
             perceptual = perceptual_loss(fake_ihc, ihc)
 
             g_loss = g_adv_loss + 100 * g_multi_loss + 10 * perceptual
@@ -309,10 +345,12 @@ for epoch in range(start_epoch, epochs):
         optimizer_G.zero_grad()
         scaler.scale(g_loss).backward()
         scaler.step(optimizer_G)
+
         scaler.update()
 
-    print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+    print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item()}, G Loss: {g_loss.item()}")
 
+    # Every 5 epochs, save images and checkpoint
     if (epoch + 1) % 5 == 0:
-        save_sample_images(epoch + 1, he_img, fake_ihc, ihc)
-        save_checkpoint(epoch + 1, generator, discriminator, optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
+        save_sample_images(epoch + 1, he_pyramid[0], fake_ihc, ihc)
+        save_checkpoint(epoch + 1, generator, discriminator, optimizer_G, optimizer_D, g_loss.item(), d_loss.item()) 

@@ -4,21 +4,19 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import os
 from torch.utils.data import Dataset, DataLoader
-import torch.nn.utils.spectral_norm as SN
 from PIL import Image
 import matplotlib.pyplot as plt
 import glob
 import re
-from torchvision.models import vgg19, VGG19_Weights
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 print(torch.cuda.is_available())
 
-# Define paths
-ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints"
+# Define paths - CHANGE THESE TO POINT TO A DATASET THAT WAS RESIZED JUST BY APPLYING A SINGLE DOWNSIZING TRANSFORMATION
+ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized_nocrop\train"
+he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered_nocrop\train"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_1"
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # DATASET LOADER
@@ -57,12 +55,42 @@ class BCIDataset(Dataset):
 
 # Initialize Transformations
 transform = transforms.Compose([
-    transforms.Resize((128, 128)),
     transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)   
+
 ])
 
 dataset = BCIDataset(he_dir=he_registered_train_path, ihc_dir=ihc_train_path, transform=transform)
-dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+# ---------- weight_init.py ----------
+def init_weights(net, init_type="normal", gain=0.02):
+    """
+    He / 'normal' = N(0,0.02) as in pix2pix; 'xavier', 'kaiming', etc. also ok.
+    Call after model is created *before* optimisers.
+    """
+    def init_func(m):                                    # noqa: D401
+        classname = m.__class__.__name__
+        if hasattr(m, "weight") and (
+            classname.find("Conv") != -1
+            or classname.find("Linear") != -1
+        ):
+            if init_type == "normal":
+                nn.init.normal_(m.weight.data, 0.0, gain)
+            elif init_type == "xavier":
+                nn.init.xavier_normal_(m.weight.data, gain=gain)
+            elif init_type == "kaiming":
+                nn.init.kaiming_normal_(m.weight.data, a=0, mode="fan_in")
+            # bias
+            if hasattr(m, "bias") and m.bias is not None:
+                nn.init.constant_(m.bias.data, 0.0)
+        elif classname.find("BatchNorm2d") != -1 or classname.find("InstanceNorm2d") != -1:
+            if m.weight is not None:                    # pytorch raises error when affine = False
+                nn.init.normal_(m.weight.data, 1.0, gain)
+            if m.bias is not None:
+                nn.init.constant_(m.bias.data, 0.0)
+
+    net.apply(init_func)
 
 # RESNET-9 BLOCKS GENERATOR
 
@@ -91,17 +119,15 @@ class ResNetGenerator(nn.Module):
         )
 
         self.downsampling = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.InstanceNorm2d(128),
-            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, 3, 2, 1), nn.InstanceNorm2d(128), nn.ReLU(True),
+            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True)   # ⇦ new
         )
 
-        self.res_blocks = nn.Sequential(*[ResNetBlock(128) for _ in range(num_res_blocks)])
+        self.res_blocks = nn.Sequential(*[ResNetBlock(256) for _ in range(num_res_blocks)])
 
         self.upsampling = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.InstanceNorm2d(64),
-            nn.ReLU(inplace=True)
+            nn.ConvTranspose2d(256, 128, 3, 2, 1, output_padding=1), nn.InstanceNorm2d(128), nn.ReLU(True),
+            nn.ConvTranspose2d(128,  64, 3, 2, 1, output_padding=1), nn.InstanceNorm2d(64),  nn.ReLU(True)
         )
 
         self.final = nn.Sequential(
@@ -121,40 +147,18 @@ class ResNetGenerator(nn.Module):
 
 class PatchDiscriminator(nn.Module):
     def __init__(self):
-        super(PatchDiscriminator, self).__init__()
+        super().__init__()
         self.model = nn.Sequential(
-            SN(nn.Conv2d(6, 64, kernel_size=4, stride=2, padding=1)),
-            nn.LeakyReLU(0.2, inplace=True),
-            SN(nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1)),
-            nn.InstanceNorm2d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            SN(nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1)),
-            nn.InstanceNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            SN(nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=1)),
-            nn.InstanceNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            SN(nn.Conv2d(512, 1, kernel_size=4, stride=1, padding=1))  
+            nn.Conv2d(6, 64, 4, 2, 1),  nn.LeakyReLU(0.2, True),
+            nn.Conv2d(64,128,4,2,1),    nn.InstanceNorm2d(128), nn.LeakyReLU(0.2, True),
+            nn.Conv2d(128,256,4,2,1),   nn.InstanceNorm2d(256), nn.LeakyReLU(0.2, True),
+            nn.Conv2d(256,512,4,1,1),   nn.InstanceNorm2d(512), nn.LeakyReLU(0.2, True),
+            nn.Conv2d(512,1,4,1,1)
         )
-
     def forward(self, he, ihc):
-        x = torch.cat((he, ihc), 1)
-        return self.model(x)
+        return self.model(torch.cat((he, ihc), 1))
 
 # LOSS FUNCTIONS & OPTIMIZERS
-
-class VGGLoss(nn.Module):
-    def __init__(self):
-        super(VGGLoss, self).__init__()
-        vgg = vgg19(weights=VGG19_Weights.IMAGENET1K_V1).features[:16]  # Extract features from early VGG layers
-        self.vgg = nn.Sequential(*[layer for layer in vgg])  # Use only feature extractor
-        for param in self.vgg.parameters():
-            param.requires_grad = False  # Freeze VGG weights
-
-    def forward(self, fake, real):
-        fake_features = self.vgg(fake)
-        real_features = self.vgg(real)
-        return F.l1_loss(fake_features, real_features)  # Perceptual loss
     
 criterion_L1 = nn.L1Loss()
 criterion_GAN = nn.BCEWithLogitsLoss()
@@ -162,48 +166,43 @@ criterion_GAN = nn.BCEWithLogitsLoss()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
+# GENERATOR & DISCRIMINATOR DEFINITIONS
+
 generator = ResNetGenerator().to(device)
 discriminator = PatchDiscriminator().to(device)
-
-optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+init_weights(generator, "normal", 0.02)
+init_weights(discriminator, "normal", 0.02)
 
 # MULTI-SCALE LOSS
 
-def gaussian_pyramid(img, levels=3):
-    pyramid = [img]
+def gaussian_blur(img: torch.Tensor) -> torch.Tensor:
+    """
+    3×3 Gaussian with reflect‑padding (matches paper’s scale‑space step).
+    img: (N,C,H,W) tensor in [-1,1]
+    """
+    kernel = torch.tensor([[1, 2, 1],
+                           [2, 4, 2],
+                           [1, 2, 1]], dtype=img.dtype,
+                           device=img.device) / 16.0
+    kernel = kernel.expand(img.size(1), 1, 3, 3)        # (C,1,3,3)
+
+    # reflect‑pad *before* convolution; padding=0 in conv
+    img = F.pad(img, (1, 1, 1, 1), mode='reflect')       # L,R,T,B
+    blurred = F.conv2d(img, kernel, stride=1,
+                       padding=0, groups=img.size(1))
+    return blurred
+
+def gaussian_pyramid(img, levels=1):
+    pyr = [img]
+    cur = img
     for _ in range(levels):
-        img = F.avg_pool2d(img, kernel_size=2)
-        pyramid.append(img)
-    return pyramid
+        for _ in range(4):            # 4 Gaussian blurs
+            cur = gaussian_blur(cur)
+        cur = F.avg_pool2d(cur, 2)    # down‑sample once
+        pyr.append(cur)
+    return pyr
 
 # TRAINING LOOP
-
-def save_sample_images(epoch, he, fake_ihc, ihc):
-    he = he.cpu().detach().numpy().transpose(0, 2, 3, 1)[0]  # Convert tensor to image
-    fake_ihc = fake_ihc.cpu().detach().numpy().transpose(0, 2, 3, 1)[0]
-    ihc = ihc.cpu().detach().numpy().transpose(0, 2, 3, 1)[0]
-
-    # ✅ Fix: Rescale `Tanh()` output from [-1,1] → [0,1]
-    fake_ihc = (fake_ihc + 1) / 2  # Shift values from [-1,1] → [0,1]
-    ihc = (ihc + 1) / 2  # Normalize real IHC image similarly
-
-    plt.figure(figsize=(12, 4))
-    plt.subplot(1, 3, 1)
-    plt.title("Input H&E")
-    plt.imshow(he)  # No need to rescale, assuming it’s already in [0,1]
-
-    plt.subplot(1, 3, 2)
-    plt.title(f"Generated IHC (Epoch {epoch})")
-    plt.imshow(fake_ihc)  # ✅ Now in the correct range for `imshow()`
-
-    plt.subplot(1, 3, 3)
-    plt.title("Ground Truth IHC")
-    plt.imshow(ihc)  # ✅ Now in the correct range for `imshow()`
-
-    plt.pause(10)  # Non-blocking pause instead of plt.show()
-    plt.close()  # Close the figure to free memory
-
 
 def save_checkpoint(epoch, generator, discriminator, optimizer_G, optimizer_D, g_loss, d_loss):
     checkpoint = {
@@ -257,13 +256,17 @@ def find_latest_checkpoint(checkpoint_dir):
 latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
 start_epoch = 0  # Default starting epoch
 
+optimizer_G = torch.optim.Adam(generator.parameters(), 2e-4, betas=(0.5,0.999))
+optimizer_D = torch.optim.Adam(discriminator.parameters(), 2e-4, betas=(0.5,0.999))
+lr_lambda   = lambda e: 1.0 if e < 25 else 1 - (e-25)/25
+sched_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G, lr_lambda)
+sched_D = torch.optim.lr_scheduler.LambdaLR(optimizer_D, lr_lambda)
+
 # Load from checkpoint
 if latest_checkpoint:
     start_epoch = load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, latest_checkpoint)
 
 epochs = 50
-
-perceptual_loss = VGGLoss().to(device)
 
 for epoch in range(start_epoch, epochs):
     for he, ihc in dataloader:
@@ -281,23 +284,25 @@ for epoch in range(start_epoch, epochs):
 
         d_loss = (d_real_loss + d_fake_loss) / 2
         d_loss.backward()
-        optimizer_D.step()
+        optimizer_D.step()	
 
         # Generator Training
         optimizer_G.zero_grad()
 
-        fake_ihc = generator(he)
-        g_adv_loss = criterion_GAN(discriminator(he, fake_ihc), real_labels)
-
-        g_multi_loss = sum(F.l1_loss(f, gt) for f, gt in zip(gaussian_pyramid(fake_ihc), gaussian_pyramid(ihc)))
-
-        g_loss = g_adv_loss + (100 * g_multi_loss) + (10 * perceptual_loss(fake_ihc, ihc))
+        fake_ihc  = generator(he)             
+        g_adv     = criterion_GAN(discriminator(he, fake_ihc), real_labels)
+        fake_pyr  = gaussian_pyramid(fake_ihc, 1)
+        real_pyr  = gaussian_pyramid(ihc,      1)
+        g_multi   = sum(F.l1_loss(f,r) for f,r in zip(fake_pyr[1:], real_pyr[1:]))
+        g_pix     = F.l1_loss(fake_ihc, ihc)
+        g_loss    = g_adv + 100*g_pix + g_multi
         g_loss.backward()
-        optimizer_G.step()
+        optimizer_G.step()	
 
-    print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item()}, G Loss: {g_loss.item()}")
+    sched_G.step(); sched_D.step()
+    print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-    # Every 10 epochs, save images and checkpoint
-    if (epoch + 1) % 10 == 0:
-        save_sample_images(epoch + 1, he, fake_ihc, ihc)
+
+    # Every 5 epochs, save images and checkpoint
+    if (epoch + 1) % 5 == 0:
         save_checkpoint(epoch + 1, generator, discriminator, optimizer_G, optimizer_D, g_loss.item(), d_loss.item()) 

@@ -14,35 +14,24 @@ from tqdm import tqdm
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-# ----CURRENTLY TESTING VERSION 2---#
+epoch_chosen = 50
 
-# Editable paths
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\checkpoints\ver_3"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_2"
 
-# For ver_4 testing
-he_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\test"
-he_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\test"
-
-# for ver_2/ver_3 testing on test dataset
-he_registered_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\test"
-
-# for ver_2/ver_3 testing on train dataset
 he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
 
 # for testing on test dataset
-ihc_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\test"
-
-# for testing on train dataset
 ihc_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
 
-# save path for generated images
-save_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\ver_3"
+# save path for generated images for test dataset
+image_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\ver_2"
 
-# save path for graphs
-graph_save_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\metric_graphs\ver_2\epoch_50"
+# save path for test dataset graphs
+graph_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\metric_graphs\ver_2"
 
-os.makedirs(save_path, exist_ok=True)
-os.makedirs(graph_save_path, exist_ok=True)
+os.makedirs(image_save_path_train, exist_ok=True)
+os.makedirs(graph_save_path_train, exist_ok=True)
+os.makedirs(checkpoint_dir, exist_ok=True)
 
 # === Dataset loader ===
 class BCIDataset(Dataset):
@@ -88,23 +77,22 @@ class ResNetBlock(nn.Module):
         return x + self.conv_block(x)
 
 class ResNetGenerator(nn.Module):
-    def __init__(self, input_channels=3, output_channels=3, num_res_blocks=9):
-        super(ResNetGenerator, self).__init__()
+    def __init__(self, input_channels=3, output_channels=3, n_blocks=9):
+        super().__init__()
         self.initial = nn.Sequential(
             nn.Conv2d(input_channels, 64, 7, 1, 3, padding_mode='reflect'),
-            nn.InstanceNorm2d(64),
-            nn.ReLU(inplace=True)
+            nn.InstanceNorm2d(64), nn.ReLU(True)
         )
-        self.downsampling = nn.Sequential(
-            nn.Conv2d(64, 128, 3, 2, 1),
-            nn.InstanceNorm2d(128),
-            nn.ReLU(inplace=True),
+        self.downsampling = nn.Sequential(      # 64 → 128 → 256
+            nn.Conv2d(64, 128, 3, 2, 1),  nn.InstanceNorm2d(128), nn.ReLU(True),
+            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True),
         )
-        self.res_blocks = nn.Sequential(*[ResNetBlock(128) for _ in range(num_res_blocks)])
-        self.upsampling = nn.Sequential(
+        self.res_blocks = nn.Sequential(*[ResNetBlock(256) for _ in range(n_blocks)])
+        self.upsampling = nn.Sequential(        # 256 → 128 → 64
+            nn.ConvTranspose2d(256, 128, 3, 2, 1, output_padding=1),
+            nn.InstanceNorm2d(128), nn.ReLU(True),
             nn.ConvTranspose2d(128, 64, 3, 2, 1, output_padding=1),
-            nn.InstanceNorm2d(64),
-            nn.ReLU(inplace=True)
+            nn.InstanceNorm2d(64),  nn.ReLU(True),
         )
         self.final = nn.Sequential(
             nn.Conv2d(64, output_channels, 7, 1, 3, padding_mode='reflect'),
@@ -116,8 +104,8 @@ class ResNetGenerator(nn.Module):
         x = self.downsampling(x)
         x = self.res_blocks(x)
         x = self.upsampling(x)
-        x = self.final(x)
-        return x
+        return self.final(x)
+
 
 # === Checkpoint Manager ===
 def get_all_checkpoints(checkpoint_dir):
@@ -206,37 +194,65 @@ def plot_metrics(metrics_dict, save_path):
 
     print("✅ Saved PSNR, SSIM, and L1 Loss plots to", save_path)
 
+# === Save Metrics to Text File ===
+def save_metrics_to_txt(metrics_dict, save_path):
+    """
+    Saves PSNR, SSIM, and L1 Loss values to a text file.
+    
+    Args:
+        metrics_dict (dict): Contains 'epochs', 'psnr', 'ssim', and 'l1'.
+        save_path (str): Directory where text file should be saved.
+    """
+    txt_path = os.path.join(save_path, "metrics_summary.txt")
+    with open(txt_path, "w") as f:
+        for epoch, psnr_val, ssim_val, l1_val in zip(
+            metrics_dict["epochs"], metrics_dict["psnr"], metrics_dict["ssim"], metrics_dict["l1"]
+        ):
+            f.write(f"Epoch {epoch}:\n")
+            f.write(f"    PSNR: {psnr_val:.2f}\n")
+            f.write(f"    SSIM: {ssim_val:.4f}\n")
+            f.write(f"    L1 Loss: {l1_val:.4f}\n\n")
+    print(f"📝 Saved metric summary to {txt_path}")
+
 # === MAIN ===
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-transform = transforms.ToTensor()
-test_dataset = BCIDataset(he_registered_test_path, ihc_resized_test_path, transform)
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize([0.5]*3, [0.5]*3)   # maps 0‑1 → −1‑1
+])
+test_dataset = BCIDataset(he_registered_train_path, ihc_resized_train_path, transform)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 checkpoints = get_all_checkpoints(checkpoint_dir)
 
 epochs, psnr_list, ssim_list, l1_list = [], [], [], []
 
-# for epoch, ckpt_path in tqdm(checkpoints, desc="🔬 Testing Checkpoints", unit="ckpt"):
-#     print(f"🔍 Testing checkpoint @ epoch {epoch}")
-#     generator = ResNetGenerator().to(device)
-#     generator = load_generator(generator, ckpt_path)
+for epoch, ckpt_path in tqdm(checkpoints, desc="🔬 Testing Checkpoints", unit="ckpt"):
+    print(f"🔍 Testing checkpoint @ epoch {epoch}")
+    generator = ResNetGenerator().to(device)
+    generator = load_generator(generator, ckpt_path)
 
-#     psnr_val, ssim_val, l1_val = test_generator(generator, test_dataloader)
+    psnr_val, ssim_val, l1_val = test_generator(generator, test_dataloader)
 
-#     print(f"✅ Epoch {epoch} - PSNR: {psnr_val:.4f}, SSIM: {ssim_val:.4f}, L1: {l1_val:.6f}")
-#     epochs.append(epoch)
-#     psnr_list.append(psnr_val)
-#     ssim_list.append(ssim_val)
-#     l1_list.append(l1_val)
+    print(f"- epoch {epoch}:")
+    print(f"    - Average PSNR: {psnr_val:.2f}")
+    print(f"    - Average SSIM: {ssim_val:.4f}")
+    print(f"    - Average L1 Loss: {l1_val:.4f}")        
+    
+    epochs.append(epoch)
+    psnr_list.append(psnr_val)
+    ssim_list.append(ssim_val)
+    l1_list.append(l1_val)
 
-# metrics = {
-#     "epochs": epochs,
-#     "psnr": psnr_list,
-#     "ssim": ssim_list,
-#     "l1": l1_list
-# }
+metrics = {
+    "epochs": epochs,
+    "psnr": psnr_list,
+    "ssim": ssim_list,
+    "l1": l1_list
+}
 
-# plot_metrics(metrics, graph_save_path)
+plot_metrics(metrics, graph_save_path_train)
+save_metrics_to_txt(metrics, graph_save_path_train)
 
 def save_generated_images_for_epoch(generator, dataloader, epoch, output_dir):
     """
@@ -257,7 +273,7 @@ def save_generated_images_for_epoch(generator, dataloader, epoch, output_dir):
     print(f"📸 Saving generated images to: {save_dir}")
 
     ihc_filenames = sorted([
-        f for f in os.listdir(ihc_resized_test_path) if f.endswith(".png")
+        f for f in os.listdir(ihc_resized_train_path) if f.endswith(".png")
     ])
 
     with torch.no_grad():
@@ -313,13 +329,13 @@ def return_checkpoint(checkpoint_dir, epoch=None):
     print(f"⚠️ Checkpoint for epoch {epoch} not found.")
     return None
 
-checkpoint = return_checkpoint(checkpoint_dir, epoch=40)
+checkpoint = return_checkpoint(checkpoint_dir, epoch=epoch_chosen)
 generator = ResNetGenerator().to(device)
 generator = load_generator(generator, checkpoint)
 
 save_generated_images_for_epoch(
     generator=generator,
     dataloader=test_dataloader,
-    epoch=40,
-    output_dir=save_path
+    epoch=epoch_chosen,
+    output_dir=image_save_path_train
 )

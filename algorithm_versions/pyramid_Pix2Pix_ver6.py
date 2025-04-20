@@ -5,9 +5,9 @@ import torchvision.transforms as transforms
 import os
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-import matplotlib.pyplot as plt
 import glob
 import re
+from normalize import dataset_mean, dataset_std
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -16,13 +16,15 @@ print(torch.cuda.is_available())
 # Define paths
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
 he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_2"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_6"
+ihc_pyramid_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_pyramid\train"
+
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # DATASET LOADER
 
 class BCIDataset(Dataset):
-    def __init__(self, he_dir, ihc_dir, transform=None):
+    def __init__(self, he_dir, ihc_dir, pyramid_dir, transform=None):
 
         self.he_images = sorted(
             [f for f in os.listdir(he_dir) if f.endswith(".png")], key=lambda x: int(x.split("_")[0])
@@ -35,32 +37,48 @@ class BCIDataset(Dataset):
  
         self.he_dir = he_dir
         self.ihc_dir = ihc_dir
+        self.pyramid_dir = pyramid_dir
         self.transform = transform
 
     def __len__(self):
         return len(self.he_images)  
 
     def __getitem__(self, idx):
-        he_path = os.path.join(self.he_dir, self.he_images[idx])
-        ihc_path = os.path.join(self.ihc_dir, self.ihc_images[idx])
+        he_filename = self.he_images[idx]
+        ihc_filename = self.ihc_images[idx]
 
-        he_image = Image.open(he_path).convert("RGB")
-        ihc_image = Image.open(ihc_path).convert("RGB")
+        he_image = Image.open(os.path.join(self.he_dir, he_filename)).convert("RGB")
+        ihc_image = Image.open(os.path.join(self.ihc_dir, ihc_filename)).convert("RGB")
 
         if self.transform:
             he_image = self.transform(he_image)
             ihc_image = self.transform(ihc_image)
 
-        return he_image, ihc_image
+        # Load pyramid levels from disk (scales 1–3)
+        base_name = ihc_filename.split('.')[0]
+        pyramid_images = []
+        for i in range(1, 4):
+            pyramid_path = os.path.join(self.pyramid_dir, f"{base_name}_scale_{i}.png")
+            img = Image.open(pyramid_path).convert("RGB")
+            if self.transform:
+                img = self.transform(img)
+            pyramid_images.append(img)
+
+        return he_image, ihc_image, pyramid_images
 
 # Initialize Transformations
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)   
+    transforms.Normalize(mean=dataset_mean, std=dataset_std)   
 
 ])
 
-dataset = BCIDataset(he_dir=he_registered_train_path, ihc_dir=ihc_train_path, transform=transform)
+dataset = BCIDataset(
+    he_dir=he_registered_train_path,
+    ihc_dir=ihc_train_path,
+    pyramid_dir=ihc_pyramid_path,
+    transform=transform
+)
 dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
 # ---------- weight_init.py ----------
@@ -132,7 +150,7 @@ class ResNetGenerator(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
-            nn.Tanh()
+            nn.Identity()
         )
 
     def forward(self, x):
@@ -269,7 +287,7 @@ if latest_checkpoint:
 epochs = 50
 
 for epoch in range(start_epoch, epochs):
-    for he, ihc in dataloader:
+    for he, ihc, pyramid_images in dataloader:
         he, ihc = he.to(device), ihc.to(device)
 
         # Discriminator Training
@@ -289,11 +307,18 @@ for epoch in range(start_epoch, epochs):
         # Generator Training
         optimizer_G.zero_grad()
 
-        fake_ihc  = generator(he)             
+        fake_ihc  = generator(he)
         g_adv     = criterion_GAN(discriminator(he, fake_ihc), real_labels)
-        fake_pyr  = gaussian_pyramid(fake_ihc, 1)
-        real_pyr  = gaussian_pyramid(ihc,      1)
-        g_multi   = sum(F.l1_loss(f,r) for f,r in zip(fake_pyr[1:], real_pyr[1:]))
+
+        # Generate fake pyramid (on-the-fly, only for fake images)
+        fake_pyr = gaussian_pyramid(fake_ihc, levels=3)[1:]  # levels 1-3
+
+        # real pyramid is already loaded from disk
+        real_pyr = [r.to(device) for r in pyramid_images]
+
+        # Compute multi-scale loss
+        g_multi = sum(F.l1_loss(f, r) for f, r in zip(fake_pyr, real_pyr))
+
         g_pix     = F.l1_loss(fake_ihc, ihc)
         g_loss    = g_adv + 100*g_pix + g_multi
         g_loss.backward()

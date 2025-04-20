@@ -6,16 +6,16 @@ from tqdm import tqdm  # ✅ Progress Bar
 # CONFIGURATION
 he_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE\train"
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC\train"
-he_resized_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
-ihc_resized_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
+he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
+ihc_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
 ihc_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\test"
 he_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\test"
 he_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE\test"
 ihc_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC\test"
 
 # Ensure output directories exist
-os.makedirs(he_resized_path, exist_ok=True)
-os.makedirs(ihc_resized_path, exist_ok=True)
+os.makedirs(he_resized_train_path, exist_ok=True)
+os.makedirs(ihc_resized_train_path, exist_ok=True)
 os.makedirs(ihc_resized_test_path, exist_ok=True)
 os.makedirs(he_resized_test_path, exist_ok=True)
 
@@ -97,8 +97,8 @@ def resize_and_center_crop(input_path, output_path, label):
 resize_and_crop_paired(
     he_input_path=he_train_path,
     ihc_input_path=ihc_train_path,
-    he_output_path=he_resized_path,
-    ihc_output_path=ihc_resized_path,
+    he_output_path=he_resized_train_path,
+    ihc_output_path=ihc_resized_train_path,
     size=(256, 256),
     crop_size=(128, 128)
 )

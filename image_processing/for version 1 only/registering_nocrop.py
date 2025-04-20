@@ -7,16 +7,22 @@ import shutil
 from tqdm import tqdm  # ✅ Progress Bar
 
 # CONFIGURATION
-he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
-ihc_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-he_pyramid_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_pyramid\train"
+he_resized_nocrop_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized_nocrop\train"
+ihc_resized_nocrop_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized_nocrop\train"
+he_registered_nocrop_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered_nocrop\train"
 
-ihc_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\test"
-he_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\test"
-he_registered_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\test"
+ihc_resized_nocrop_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized_nocrop\test"
+he_resized_nocrop_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized_nocrop\test"
+he_registered_nocrop_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered_nocrop\test"
 he_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE\test"
 ihc_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC\test"
+
+os.makedirs(he_registered_nocrop_test_path, exist_ok=True)
+os.makedirs(he_registered_nocrop_train_path, exist_ok=True)
+os.makedirs(ihc_resized_nocrop_test_path, exist_ok=True)
+os.makedirs(ihc_resized_nocrop_train_path, exist_ok=True)
+os.makedirs(he_resized_nocrop_test_path, exist_ok=True)
+os.makedirs(he_resized_nocrop_train_path, exist_ok=True)
 
 # Step 2: Elastix Registration
 elastix_exe = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\elastix\elastix.exe"
@@ -119,11 +125,11 @@ def register_images(he_path, ihc_path, output_path, param_file):
         print(f"⚠️ Error converting {transformed_img_path}: {e}")
 
 # Register images with progress bar (FOR TRAINING)
-files = [f for f in os.listdir(he_resized_train_path)]
+files = [f for f in os.listdir(he_resized_nocrop_train_path)]
 for filename in tqdm(files, desc="Registering images", ncols=80):
-    he_img_path = os.path.join(he_resized_train_path, filename)
-    ihc_img_path = os.path.join(ihc_resized_train_path, filename)
-    registered_output = os.path.join(he_registered_train_path, filename)
+    he_img_path = os.path.join(he_resized_nocrop_train_path, filename)
+    ihc_img_path = os.path.join(ihc_resized_nocrop_train_path, filename)
+    registered_output = os.path.join(he_registered_nocrop_train_path, filename)
 
     if os.path.exists(registered_output):
         continue  # Skip if already registered
@@ -136,9 +142,9 @@ for filename in tqdm(files, desc="Registering images", ncols=80):
 # Register HE TEST images
 files = [f for f in os.listdir(he_test_path)]
 for filename in tqdm(files, desc="Registering test images", ncols=80):
-    he_img_path = os.path.join(he_resized_test_path, filename)
-    ihc_img_path = os.path.join(ihc_resized_test_path, filename)
-    registered_output = os.path.join(he_registered_test_path, filename)
+    he_img_path = os.path.join(he_resized_nocrop_test_path, filename)
+    ihc_img_path = os.path.join(ihc_resized_nocrop_test_path, filename)
+    registered_output = os.path.join(he_registered_nocrop_test_path, filename)
 
     if os.path.exists(registered_output):
         continue  # Skip if already registered

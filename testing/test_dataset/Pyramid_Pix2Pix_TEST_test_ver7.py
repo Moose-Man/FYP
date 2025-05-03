@@ -12,7 +12,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 from tqdm import tqdm
 
-from normalize import dataset_mean, dataset_std
+from normalize_resized_crop_dataset import dataset_mean, dataset_std
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 

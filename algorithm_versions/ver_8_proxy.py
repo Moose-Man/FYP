@@ -1,4 +1,4 @@
-# builds on version 3, version 4 - uses non-registered dataset
+# version 8 - involves STN
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,6 +8,51 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import glob
 import re
+from normalize_resized_crop_dataset import dataset_mean, dataset_std
+import matplotlib.pyplot as plt
+
+def show_tensor_image(tensor):
+    """Convert tensor to displayable format"""
+    image = tensor.cpu().detach().clone()
+    image = image * torch.tensor(dataset_std).view(3, 1, 1) + torch.tensor(dataset_mean).view(3, 1, 1)
+    image = torch.clamp(image, 0, 1)
+    return image.permute(1, 2, 0).numpy()
+
+def visualize_samples(generator, stn, dataloader, num_samples=3, save_dir=r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_8_proxy"):
+    generator.eval()
+    stn.eval()
+    os.makedirs(save_dir, exist_ok=True)
+
+    with torch.no_grad():
+        for i, (he, ihc) in enumerate(dataloader):
+            if i >= num_samples:
+                break
+            he, ihc = he.to(device), ihc.to(device)
+
+            warped_ihc, _ = stn(he, ihc)
+            fake_ihc = generator(he)
+
+            he_img = show_tensor_image(he[0])
+            ihc_img = show_tensor_image(ihc[0])
+            warped_img = show_tensor_image(warped_ihc[0])
+            fake_img = show_tensor_image(fake_ihc[0])
+
+            fig, axs = plt.subplots(1, 4, figsize=(16, 4))
+            axs[0].imshow(he_img)
+            axs[0].set_title("H&E (Input)")
+            axs[1].imshow(ihc_img)
+            axs[1].set_title("Real IHC")
+            axs[2].imshow(warped_img)
+            axs[2].set_title("Warped IHC")
+            axs[3].imshow(fake_img)
+            axs[3].set_title("Generated IHC")
+
+            for ax in axs:
+                ax.axis("off")
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(save_dir, f"sample_{i}.png"))
+            plt.show()
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -16,15 +61,44 @@ print(torch.cuda.is_available())
 # Define paths
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
 he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_4"
-ihc_pyramid_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_pyramid\train"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_8_proxy"
 
 os.makedirs(checkpoint_dir, exist_ok=True)
+
+# lambda_reg definition - determines how strongly STN warps images during training
+lambda_reg_values = [4]
+
+# Spatial Transformer Network 
+
+class STN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # 6→32→64 conv layers, then FC to 6 params
+        self.loc_net = nn.Sequential(
+            nn.Conv2d(6, 32, 3, 2, 1), nn.ReLU(),
+            nn.Conv2d(32,64,3,2,1),     nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
+        )
+        # initialize to identity transform
+        self.fc_loc = nn.Sequential(
+            nn.Linear(64, 32), nn.ReLU(),
+            nn.Linear(32, 6)
+        )
+        # init fc_loc to [1,0,0, 0,1,0]
+        self.fc_loc[2].weight.data.zero_()
+        self.fc_loc[2].bias.data.copy_(torch.tensor([1,0,0, 0,1,0], dtype=torch.float))
+    def forward(self, he, ihc):
+        x = torch.cat([he, ihc], dim=1)               # (N,6,H,W)
+        xs = self.loc_net(x).view(x.size(0), -1)      # (N,64)
+        theta = self.fc_loc(xs).view(-1, 2, 3)        # (N,2,3)
+        grid  = F.affine_grid(theta, ihc.size(), align_corners=True)
+        warped_ihc = F.grid_sample(ihc, grid, align_corners=True)
+        return warped_ihc, theta
 
 # DATASET LOADER
 
 class BCIDataset(Dataset):
-    def __init__(self, he_dir, ihc_dir, pyramid_dir, transform=None):
+    def __init__(self, he_dir, ihc_dir, transform=None):
 
         self.he_images = sorted(
             [f for f in os.listdir(he_dir) if f.endswith(".png")], key=lambda x: int(x.split("_")[0])
@@ -37,7 +111,6 @@ class BCIDataset(Dataset):
  
         self.he_dir = he_dir
         self.ihc_dir = ihc_dir
-        self.pyramid_dir = pyramid_dir
         self.transform = transform
 
     def __len__(self):
@@ -54,31 +127,25 @@ class BCIDataset(Dataset):
             he_image = self.transform(he_image)
             ihc_image = self.transform(ihc_image)
 
-        # Load pyramid levels from disk (scales 1–3)
-        base_name = ihc_filename.split('.')[0]
-        pyramid_images = []
-        for i in range(1, 4):
-            pyramid_path = os.path.join(self.pyramid_dir, f"{base_name}_scale_{i}.png")
-            img = Image.open(pyramid_path).convert("RGB")
-            if self.transform:
-                img = self.transform(img)
-            pyramid_images.append(img)
-
-        return he_image, ihc_image, pyramid_images
+        return he_image, ihc_image
 
 # Initialize Transformations
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)   
+    transforms.Normalize(mean=dataset_mean, std=dataset_std)   
 
 ])
 
-dataset = BCIDataset(
-    he_dir=he_resized_train_path,
-    ihc_dir=ihc_train_path,
-    pyramid_dir=ihc_pyramid_path,
-    transform=transform
+subset = 100
+dataset = torch.utils.data.Subset(
+    BCIDataset(
+        he_dir=he_resized_train_path,
+        ihc_dir=ihc_train_path,
+        transform=transform
+    ),
+    list(range(subset))
 )
+
 dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
 # ---------- weight_init.py ----------
@@ -138,7 +205,7 @@ class ResNetGenerator(nn.Module):
 
         self.downsampling = nn.Sequential(
             nn.Conv2d(64, 128, 3, 2, 1), nn.InstanceNorm2d(128), nn.ReLU(True),
-            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True)   # ⇦ new
+            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True)
         )
 
         self.res_blocks = nn.Sequential(*[ResNetBlock(256) for _ in range(num_res_blocks)])
@@ -150,7 +217,7 @@ class ResNetGenerator(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
-            nn.Tanh()
+            nn.Identity()
         )
 
     def forward(self, x):
@@ -178,11 +245,22 @@ class PatchDiscriminator(nn.Module):
 
 # LOSS FUNCTIONS & OPTIMIZERS
     
-criterion_L1 = nn.L1Loss()
 criterion_GAN = nn.BCEWithLogitsLoss()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+
+stn = STN().to(device)
+# 1) apply your normal init to everything
+init_weights(stn, "normal", 0.02)
+
+# 2) now *force* the last Linear layer back to identity
+with torch.no_grad():
+    # fc_loc is nn.Sequential([Linear(64→32), ReLU, Linear(32→6)])
+    last_fc: nn.Linear = stn.fc_loc[2]
+    last_fc.weight.zero_()   # zero out the 6×32 weight matrix
+    # set bias = [1,0,0, 0,1,0]
+    last_fc.bias.copy_(torch.tensor([1.,0.,0., 0.,1.,0.], device=device))
 
 # GENERATOR & DISCRIMINATOR DEFINITIONS
 
@@ -229,14 +307,15 @@ def save_checkpoint(epoch, generator, discriminator, optimizer_G, optimizer_D, g
         'discriminator_state_dict': discriminator.state_dict(),
         'optimizer_G_state_dict': optimizer_G.state_dict(),
         'optimizer_D_state_dict': optimizer_D.state_dict(),
+        'stn_state_dict': stn.state_dict(),
         'g_loss': g_loss,
         'd_loss': d_loss
     }
-    checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pth")
+    checkpoint_path = os.path.join(run_dir, f"checkpoint_epoch_{epoch}.pth")
     torch.save(checkpoint, checkpoint_path)
     print(f"✅ Checkpoint saved at {checkpoint_path}")
 
-def load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, checkpoint_path):
+def load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, stn, checkpoint_path):
     if not os.path.exists(checkpoint_path):
         print(f"⚠️ No checkpoint found at {checkpoint_path}, starting from scratch.")
         return 0  # Start from epoch 0
@@ -246,6 +325,7 @@ def load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, checkpoi
     discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
     optimizer_G.load_state_dict(checkpoint['optimizer_G_state_dict'])
     optimizer_D.load_state_dict(checkpoint['optimizer_D_state_dict'])
+    stn.load_state_dict(checkpoint['stn_state_dict'])
 
     print(f"✅ Loaded checkpoint from {checkpoint_path} (Epoch {checkpoint['epoch']})")
     return checkpoint['epoch']  # Return last saved epoch
@@ -274,7 +354,7 @@ def find_latest_checkpoint(checkpoint_dir):
 latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
 start_epoch = 0  # Default starting epoch
 
-optimizer_G = torch.optim.Adam(generator.parameters(), 2e-4, betas=(0.5,0.999))
+optimizer_G = torch.optim.Adam(list(generator.parameters()) + list(stn.parameters()), 2e-4, betas=(0.5,0.999))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), 2e-4, betas=(0.5,0.999))
 lr_lambda   = lambda e: 1.0 if e < 25 else 1 - (e-25)/25
 sched_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G, lr_lambda)
@@ -282,52 +362,113 @@ sched_D = torch.optim.lr_scheduler.LambdaLR(optimizer_D, lr_lambda)
 
 # Load from checkpoint
 if latest_checkpoint:
-    start_epoch = load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, latest_checkpoint)
+    start_epoch = load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, stn, latest_checkpoint)
 
-epochs = 50
+for lambda_reg in lambda_reg_values:
+    start_epoch = 0
+    print(f"\n=== Starting run for lambda_reg = {lambda_reg} ===")
 
-for epoch in range(start_epoch, epochs):
-    for he, ihc, pyramid_images in dataloader:
-        he, ihc = he.to(device), ihc.to(device)
+    # Reset model weights
+    generator = ResNetGenerator().to(device)
+    discriminator = PatchDiscriminator().to(device)
+    stn = STN().to(device)
 
-        # Discriminator Training
-        optimizer_D.zero_grad()
+    init_weights(generator, "normal", 0.02)
+    init_weights(discriminator, "normal", 0.02)
+    init_weights(stn, "normal", 0.02)
 
-        real_labels = torch.ones_like(discriminator(he, ihc)).to(device)
-        fake_labels = torch.zeros_like(real_labels).to(device)
+    with torch.no_grad():
+        stn.fc_loc[2].weight.zero_()
+        stn.fc_loc[2].bias.copy_(torch.tensor([1.,0.,0.,0.,1.,0.], device=device))
 
-        d_real_loss = criterion_GAN(discriminator(he, ihc), real_labels)
-        fake_ihc = generator(he).detach()
-        d_fake_loss = criterion_GAN(discriminator(he, fake_ihc), fake_labels)
+    optimizer_G = torch.optim.Adam(list(generator.parameters()) + list(stn.parameters()), 2e-4, betas=(0.5,0.999))
+    optimizer_D = torch.optim.Adam(discriminator.parameters(), 2e-4, betas=(0.5,0.999))
+    sched_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G, lr_lambda)
+    sched_D = torch.optim.lr_scheduler.LambdaLR(optimizer_D, lr_lambda)
 
-        d_loss = (d_real_loss + d_fake_loss) / 2
-        d_loss.backward()
-        optimizer_D.step()	
+    # make a unique directory for this proxy run
+    run_dir = os.path.join(checkpoint_dir, f"lambda_{lambda_reg}")
+    os.makedirs(run_dir, exist_ok=True)
 
-        # Generator Training
-        optimizer_G.zero_grad()
+    epochs = 5
 
-        fake_ihc  = generator(he)
-        g_adv     = criterion_GAN(discriminator(he, fake_ihc), real_labels)
+    for epoch in range(start_epoch, epochs):
+        for he, ihc in dataloader:
+            he, ihc = he.to(device), ihc.to(device)
 
-        # Generate fake pyramid (on-the-fly, only for fake images)
-        fake_pyr = gaussian_pyramid(fake_ihc, levels=3)[1:]  # levels 1-3
+            # ─── 1) Warp the real IHC (and get θ) ───────────────────────────
+            warped_ihc, theta = stn(he, ihc)  # warped_ihc: (N,3,H,W), theta: (N,2,3)
 
-        # real pyramid is already loaded from disk
-        real_pyr = [r.to(device) for r in pyramid_images]
+            # ─── 2) Discriminator step ──────────────────────────────────────
+            optimizer_D.zero_grad()
+            # real
+            real_pred = discriminator(he, warped_ihc.detach())  # note: use warped_ihc or original ihc
+            real_labels = torch.ones_like(real_pred, dtype=torch.float, device=device)
+            d_real_loss = criterion_GAN(real_pred, real_labels)
+            # fake
+            fake_ihc_det = generator(he).detach()
+            fake_pred = discriminator(he, fake_ihc_det)
+            fake_labels = torch.zeros_like(fake_pred, dtype=torch.float, device=device)
+            d_fake_loss = criterion_GAN(fake_pred, fake_labels)
+            # total
+            d_loss = 0.5 * (d_real_loss + d_fake_loss)
+            d_loss.backward()
+            optimizer_D.step()
 
-        # Compute multi-scale loss
-        g_multi = sum(F.l1_loss(f, r) for f, r in zip(fake_pyr, real_pyr))
+            # Generator + STN joint step 
+            optimizer_G.zero_grad()
 
-        g_pix     = F.l1_loss(fake_ihc, ihc)
-        g_loss    = g_adv + 100*g_pix + g_multi
-        g_loss.backward()
-        optimizer_G.step()	
+            # 1) Build sampling grid & valid‐pixel mask
+            grid = F.affine_grid(theta, ihc.size(), align_corners=True)  # (N,H,W,2)
+            valid_mask = (
+                (grid[...,0] >= -1) & (grid[...,0] <= 1) &
+                (grid[...,1] >= -1) & (grid[...,1] <= 1)
+            ).float().unsqueeze(1)  # → (N,1,H,W)
+            valid_mask = valid_mask.expand(-1, 3, -1, -1)   # → (N,3,H,W)
 
-    sched_G.step(); sched_D.step()
-    print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+            # 2) Adversarial loss
+            fake_ihc = generator(he)
+            pred_fake = discriminator(he, fake_ihc)
+            g_adv = criterion_GAN(pred_fake,
+                torch.ones_like(pred_fake, dtype=torch.float, device=device))
+
+            # 3) Masked pixel‐level L1
+            masked_fake = fake_ihc * valid_mask
+            masked_real = warped_ihc * valid_mask
+            g_pix = F.l1_loss(masked_fake, masked_real, reduction='sum') \
+                    / (valid_mask.sum() + 1e-6)
+
+            # 4) Build on‐the‐fly pyramids (identical shapes)
+            real_pyr = gaussian_pyramid(warped_ihc, levels=3)[1:]  # list of (N,3,Hi,Wi)
+            fake_pyr = gaussian_pyramid(fake_ihc,   levels=3)[1:]
+
+            # 5) Masked multi‐scale L1
+            g_multi = 0
+            for f, r in zip(fake_pyr, real_pyr):
+                mask_lvl = F.interpolate(valid_mask, size=f.shape[2:], mode='nearest')
+                g_multi += F.l1_loss(f*mask_lvl, r*mask_lvl, reduction='sum') \
+                        / (mask_lvl.sum() + 1e-6)
+
+            # 6) STN regularization
+            id_theta = (torch.tensor([1.,0.,0.,0.,1.,0.], device=device)
+                        .view(1,2,3).expand(theta.size(0),-1,-1))
+            reg_loss = F.mse_loss(theta, id_theta)
+
+            # 7) Total loss & step
+            g_loss = g_adv + 100*g_pix + g_multi + lambda_reg*reg_loss
+            g_loss.backward()
+            optimizer_G.step()
 
 
-    # Every 5 epochs, save images and checkpoint
-    if (epoch + 1) % 5 == 0:
-        save_checkpoint(epoch + 1, generator, discriminator, optimizer_G, optimizer_D, g_loss.item(), d_loss.item()) 
+        # Step schedulers 
+        sched_G.step()
+        sched_D.step()
+
+        # Logging & checkpointing 
+        print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+        visualize_samples(generator, stn, dataloader, num_samples=3, save_dir=f"lambda_{lambda_reg}_samples")
+        if (epoch + 1) % 5 == 0:
+            save_checkpoint(epoch + 1,
+                            generator, discriminator,
+                            optimizer_G, optimizer_D,
+                        g_loss.item(), d_loss.item())

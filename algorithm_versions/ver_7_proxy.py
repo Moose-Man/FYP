@@ -1,4 +1,3 @@
-# builds on version 2, version 3 - gaussian pyramid loaded from disk
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,15 +7,50 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import glob
 import re
+from normalize_resized_crop_dataset import dataset_mean, dataset_std
+import matplotlib.pyplot as plt
+from torchvision.transforms.functional import to_pil_image
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 print(torch.cuda.is_available())
 
+
+def show_tensor_image(tensor):
+    """Undo normalization & convert to H×W×C numpy for plt."""
+    img = tensor.cpu().detach().clone()
+    img = img * torch.tensor(dataset_std).view(3,1,1) + torch.tensor(dataset_mean).view(3,1,1)
+    img = torch.clamp(img, 0, 1)
+    return img.permute(1,2,0).numpy()
+
+def visualize_no_stn(generator, dataloader, num_samples=3, save_dir="non_stn_samples"):
+    os.makedirs(save_dir, exist_ok=True)
+    generator.eval()
+    with torch.no_grad():
+        for i, (he, ihc, _) in enumerate(dataloader):
+            if i>=num_samples: break
+            he, ihc = he.to(device), ihc.to(device)
+            fake_ihc = generator(he)
+
+            he_img    = show_tensor_image(he[0])
+            real_img  = show_tensor_image(ihc[0])
+            fake_img  = show_tensor_image(fake_ihc[0])
+
+            fig, axs = plt.subplots(1,3,figsize=(12,4))
+            axs[0].imshow(he_img);   axs[0].set_title("H&E (Input)")
+            axs[1].imshow(real_img); axs[1].set_title("Real IHC")
+            axs[2].imshow(fake_img); axs[2].set_title("Generated IHC")
+            for ax in axs: ax.axis("off")
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(save_dir, f"sample_{i}.png"))
+            plt.show()
+    generator.train()
+
 # Define paths
 ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_3"
+he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_7_proxy"
 ihc_pyramid_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_pyramid\train"
 
 os.makedirs(checkpoint_dir, exist_ok=True)
@@ -69,15 +103,21 @@ class BCIDataset(Dataset):
 # Initialize Transformations
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)   
+    transforms.Normalize(mean=dataset_mean, std=dataset_std)   
+
 ])
 
-dataset = BCIDataset(
-    he_dir=he_registered_train_path,
-    ihc_dir=ihc_train_path,
-    pyramid_dir=ihc_pyramid_path,
-    transform=transform
+subset = 100
+dataset = torch.utils.data.Subset(
+    BCIDataset(
+        he_dir=he_resized_train_path,
+        ihc_dir=ihc_train_path,
+        pyramid_dir=ihc_pyramid_path,
+        transform=transform
+    ),
+    list(range(subset))
 )
+
 dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
 # ---------- weight_init.py ----------
@@ -149,7 +189,7 @@ class ResNetGenerator(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
-            nn.Tanh()
+            nn.Identity()
         )
 
     def forward(self, x):
@@ -283,7 +323,7 @@ sched_D = torch.optim.lr_scheduler.LambdaLR(optimizer_D, lr_lambda)
 if latest_checkpoint:
     start_epoch = load_checkpoint(generator, discriminator, optimizer_G, optimizer_D, latest_checkpoint)
 
-epochs = 50
+epochs = 5
 
 for epoch in range(start_epoch, epochs):
     for he, ihc, pyramid_images in dataloader:
@@ -330,3 +370,5 @@ for epoch in range(start_epoch, epochs):
     # Every 5 epochs, save images and checkpoint
     if (epoch + 1) % 5 == 0:
         save_checkpoint(epoch + 1, generator, discriminator, optimizer_G, optimizer_D, g_loss.item(), d_loss.item()) 
+    
+    visualize_no_stn(generator, dataloader, num_samples=3, save_dir="non_stn_samples")

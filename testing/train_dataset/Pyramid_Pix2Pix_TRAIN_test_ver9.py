@@ -12,24 +12,24 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 from tqdm import tqdm
 
-from normalize_registered_dataset import dataset_mean, dataset_std
+from normalize_resized_crop_dataset import dataset_mean, dataset_std
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 epoch_chosen = 50
 
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_5"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_7"
 
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
+he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized\train"
 
-# for testing on train dataset
+# for testing on test dataset
 ihc_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
 
-# save path for generated images for train dataset
-image_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\ver_5"
+# save path for generated images for test dataset
+image_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\ver_7"
 
-# save path for train dataset graphs
-graph_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\metric_graphs\ver_5"
+# save path for test dataset graphs
+graph_save_path_train = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\train_dataset\metric_graphs\ver_7"
 
 os.makedirs(image_save_path_train, exist_ok=True)
 os.makedirs(graph_save_path_train, exist_ok=True)
@@ -226,7 +226,7 @@ transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(dataset_mean, dataset_std)
 ])
-test_dataset = BCIDataset(he_registered_train_path, ihc_resized_train_path, transform)
+test_dataset = BCIDataset(he_resized_train_path, ihc_resized_train_path, transform)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 checkpoints = get_all_checkpoints(checkpoint_dir)
@@ -286,7 +286,7 @@ def save_generated_images_for_epoch(generator, dataloader, epoch, output_dir):
         for i, (he_image, _) in enumerate(dataloader):
             he_image = he_image.to(device)
             ihc_fake = generator(he_image)
-
+            
             inv_mean = torch.tensor(dataset_mean).view(1, 3, 1, 1).to(device)
             inv_std = torch.tensor(dataset_std).view(1, 3, 1, 1).to(device)
             ihc_fake = ihc_fake * inv_std + inv_mean  # Inverse normalization

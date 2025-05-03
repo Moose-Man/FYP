@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import glob
 import re
-from normalize import dataset_mean, dataset_std
+from normalize_resized_crop_dataset import dataset_mean, dataset_std
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 

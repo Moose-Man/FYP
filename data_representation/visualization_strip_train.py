@@ -120,7 +120,7 @@ def make_stacked_figure(filenames: List[str]):
     n_total_cols  = n_img_cols + 1   # extra col for filename labels
 
     fig_width  = FIGSIZE[0]
-    fig_height = FIGSIZE[1] * n_rows
+    fig_height = FIGSIZE[1] * n_rows * 0.5
     fig, axes  = plt.subplots(
         n_rows, n_total_cols, figsize=(fig_width, fig_height), squeeze=False
     )

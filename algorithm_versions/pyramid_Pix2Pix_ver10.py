@@ -1,4 +1,4 @@
-# builds on version 2, version 3 - gaussian pyramid loaded from disk
+# optimized version of v7 -> on the fly guassian pyramids only + no cropping when downscaling
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,74 +8,60 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import glob
 import re
+from normalize_resized_nocrop_dataset import dataset_mean, dataset_std
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 print(torch.cuda.is_available())
 
 # Define paths
-ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized\train"
-he_registered_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_registered\train"
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_3"
-ihc_pyramid_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_pyramid\train"
+ihc_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized_nocrop\train"
+he_resized_train_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized_nocrop\train"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_10"
 
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # DATASET LOADER
 
 class BCIDataset(Dataset):
-    def __init__(self, he_dir, ihc_dir, pyramid_dir, transform=None):
-
+    def __init__(self, he_dir, ihc_dir, transform=None):
         self.he_images = sorted(
-            [f for f in os.listdir(he_dir) if f.endswith(".png")], key=lambda x: int(x.split("_")[0])
+            [f for f in os.listdir(he_dir) if f.endswith(".png")],
+            key=lambda x: int(x.split("_")[0])
         )
         self.ihc_images = sorted(
-            [f for f in os.listdir(ihc_dir) if f.endswith(".png")], key=lambda x: int(x.split("_")[0])
+            [f for f in os.listdir(ihc_dir) if f.endswith(".png")],
+            key=lambda x: int(x.split("_")[0])
         )
-
-        assert len(self.he_images) == len(self.ihc_images), "Dataset mismatch: Different number of HE and IHC images!"
- 
+        assert len(self.he_images) == len(self.ihc_images), \
+            "Dataset mismatch: Different number of HE and IHC images!"
         self.he_dir = he_dir
         self.ihc_dir = ihc_dir
-        self.pyramid_dir = pyramid_dir
         self.transform = transform
 
     def __len__(self):
-        return len(self.he_images)  
+        return len(self.he_images)
 
     def __getitem__(self, idx):
-        he_filename = self.he_images[idx]
-        ihc_filename = self.ihc_images[idx]
-
-        he_image = Image.open(os.path.join(self.he_dir, he_filename)).convert("RGB")
-        ihc_image = Image.open(os.path.join(self.ihc_dir, ihc_filename)).convert("RGB")
-
+        he_file = self.he_images[idx]
+        ihc_file = self.ihc_images[idx]
+        he = Image.open(os.path.join(self.he_dir, he_file)).convert("RGB")
+        ihc = Image.open(os.path.join(self.ihc_dir, ihc_file)).convert("RGB")
         if self.transform:
-            he_image = self.transform(he_image)
-            ihc_image = self.transform(ihc_image)
-
-        # Load pyramid levels from disk (scales 1–3)
-        base_name = ihc_filename.split('.')[0]
-        pyramid_images = []
-        for i in range(1, 4):
-            pyramid_path = os.path.join(self.pyramid_dir, f"{base_name}_scale_{i}.png")
-            img = Image.open(pyramid_path).convert("RGB")
-            if self.transform:
-                img = self.transform(img)
-            pyramid_images.append(img)
-
-        return he_image, ihc_image, pyramid_images
+            he = self.transform(he)
+            ihc = self.transform(ihc)
+        return he, ihc
 
 # Initialize Transformations
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)   
+    transforms.Normalize(mean=dataset_mean, std=dataset_std)   
+
 ])
 
 dataset = BCIDataset(
-    he_dir=he_registered_train_path,
+    he_dir=he_resized_train_path,
     ihc_dir=ihc_train_path,
-    pyramid_dir=ihc_pyramid_path,
     transform=transform
 )
 dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
@@ -149,7 +135,7 @@ class ResNetGenerator(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
-            nn.Tanh()
+            nn.Identity()
         )
 
     def forward(self, x):
@@ -286,7 +272,7 @@ if latest_checkpoint:
 epochs = 50
 
 for epoch in range(start_epoch, epochs):
-    for he, ihc, pyramid_images in dataloader:
+    for he, ihc in dataloader:
         he, ihc = he.to(device), ihc.to(device)
 
         # Discriminator Training
@@ -311,9 +297,7 @@ for epoch in range(start_epoch, epochs):
 
         # Generate fake pyramid (on-the-fly, only for fake images)
         fake_pyr = gaussian_pyramid(fake_ihc, levels=3)[1:]  # levels 1-3
-
-        # real pyramid is already loaded from disk
-        real_pyr = [r.to(device) for r in pyramid_images]
+        real_pyr = gaussian_pyramid(ihc, levels=3)[1:]
 
         # Compute multi-scale loss
         g_multi = sum(F.l1_loss(f, r) for f, r in zip(fake_pyr, real_pyr))

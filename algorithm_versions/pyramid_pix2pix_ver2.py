@@ -1,3 +1,4 @@
+# builds on version 1, version 2 - downsizes+crops dataset
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +6,6 @@ import torchvision.transforms as transforms
 import os
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-import matplotlib.pyplot as plt
 import glob
 import re
 

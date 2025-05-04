@@ -179,7 +179,7 @@ dataset = BCIDataset(
 )
 dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
-# ---------- weight_init.py ----------
+# weight_init
 def init_weights(net, init_type="normal", gain=0.02):
     """
     He / 'normal' = N(0,0.02) as in pix2pix; 'xavier', 'kaiming', etc. also ok.
@@ -236,7 +236,7 @@ class ResNetGenerator(nn.Module):
 
         self.downsampling = nn.Sequential(
             nn.Conv2d(64, 128, 3, 2, 1), nn.InstanceNorm2d(128), nn.ReLU(True),
-            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True)   # ⇦ new
+            nn.Conv2d(128, 256, 3, 2, 1), nn.InstanceNorm2d(256), nn.ReLU(True)   
         )
 
         self.res_blocks = nn.Sequential(*[ResNetBlock(256) for _ in range(num_res_blocks)])
@@ -282,7 +282,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 stn = STN().to(device)
-init_weights(stn, "normal", 0.02)    # reuse your init function (except keep fc_loc as identity)
+init_weights(stn, "normal", 0.02)   
 
 # — force identity bias so we start at true identity θ before any training —
 with torch.no_grad():
@@ -297,7 +297,7 @@ discriminator = PatchDiscriminator().to(device)
 init_weights(generator, "normal", 0.02)
 init_weights(discriminator, "normal", 0.02)
 
-# PatchNCE setup
+# PatchNCE SETUP
 encoder       = PatchEncoder(in_ch=3, feat_dim=256).to(device)
 patchnce_loss = PatchNCELoss(temperature=0.085, num_negatives=128).to(device)
 lambda_nce    = 0.5
@@ -316,7 +316,6 @@ def gaussian_blur(img: torch.Tensor) -> torch.Tensor:
                            device=img.device) / 16.0
     kernel = kernel.expand(img.size(1), 1, 3, 3)        # (C,1,3,3)
 
-    # reflect‑pad *before* convolution; padding=0 in conv
     img = F.pad(img, (1, 1, 1, 1), mode='reflect')       # L,R,T,B
     blurred = F.conv2d(img, kernel, stride=1,
                        padding=0, groups=img.size(1))
@@ -417,7 +416,7 @@ for epoch in range(start_epoch, epochs):
         # ─── 2) Discriminator step ──────────────────────────────────────
         optimizer_D.zero_grad()
         # real
-        real_pred = discriminator(he, warped_ihc.detach())  # note: use warped_ihc or original ihc
+        real_pred = discriminator(he, warped_ihc.detach()) 
         real_labels = torch.ones_like(real_pred, dtype=torch.float, device=device)
         d_real_loss = criterion_GAN(real_pred, real_labels)
         # fake
@@ -470,7 +469,7 @@ for epoch in range(start_epoch, epochs):
         reg_loss = F.mse_loss(theta, id_theta)
 
         # 7) PatchNCE contrastive loss
-        feat_q = encoder(fake_ihc)      # backprop into G & STN
+        feat_q = encoder(fake_ihc)
         feat_k = encoder(warped_ihc)
         g_nce  = patchnce_loss(feat_q, feat_k)
 
@@ -496,7 +495,6 @@ for epoch in range(start_epoch, epochs):
         f"G Loss: {g_loss.item():.4f}, "
         f"NCE Loss: {g_nce.item():.4f}")
     # visualize_samples(generator, stn, dataloader, num_samples=1)
-    #visualize_samples(generator, stn, dataloader, num_samples=3, save_dir=f"lambda_{lambda_reg}_samples")
     if (epoch + 1) % 5 == 0:
         save_checkpoint(epoch + 1,
                         generator, discriminator,

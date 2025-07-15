@@ -1,7 +1,7 @@
 from pathlib import Path
 from PIL import Image   # pip install pillow
 
-folder = Path(r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\FYP_1\PAN\results_single\pan_baseline\test_latest")      # ← change me
+folder = Path(r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\FYP_1\PAN\results_single\pan_stn\test_latest")      # ← change me
 out_dir = folder / "png"                      # converts go here (optional)
 out_dir.mkdir(exist_ok=True)
 

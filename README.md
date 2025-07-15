@@ -14,7 +14,7 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 | **PAN**             |               |          |  21.50  | 0.3944  |
-|                     |               |    ✓     |  20.69  | 0.3710  |
+|                     |               |    ✓     |  20.23  | 0.3827  |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 

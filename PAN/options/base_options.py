@@ -9,6 +9,8 @@ class BaseOptions():
         self.initialized = False
 
     def initialize(self):
+        self.parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for weight initialisation (default 0.02)')
+        self.parser.add_argument('--lambda_stn', type=float, default=0.0, help='>0 activates the STN and sets its identity-θ regulariser')
         self.parser.add_argument('--pan_mergin_m', type=int, default=50, help='positive margin of PAN loss')
         self.parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
         self.parser.add_argument('--batchSize', type=int, default=1, help='input batch size')

@@ -72,15 +72,15 @@ class Pix2PixModel(BaseModel):
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
-        self.real_A = Variable(self.input_A)
+        self.real_A = self.input_A
         self.fake_B = self.netG.forward(self.real_A)
-        self.real_B = Variable(self.input_B)
+        self.real_B = self.input_B
 
     # no backprop gradients
     def test(self):
-        self.real_A = Variable(self.input_A, volatile=True)
+        self.real_A = self.input_A
         self.fake_B = self.netG.forward(self.real_A)
-        self.real_B = Variable(self.input_B, volatile=True)
+        self.real_B = self.input_B
 
     # get image paths
     def get_image_paths(self):
@@ -130,10 +130,10 @@ class Pix2PixModel(BaseModel):
         self.optimizer_G.step()
 
     def get_current_errors(self):
-        return OrderedDict([('G_GAN', self.loss_G_GAN.data[0]),
-                            ('G_L1', self.loss_G_L1.data[0]),
-                            ('D_real', self.loss_D_real.data[0]),
-                            ('D_fake', self.loss_D_fake.data[0])
+        return OrderedDict([('G_GAN', self.loss_G_GAN.item()),
+                            ('G_L1', self.loss_G_L1.item()),
+                            ('D_real', self.loss_D_real.item()),
+                            ('D_fake', self.loss_D_fake.item())
                             ])
 
     def get_current_visuals(self):

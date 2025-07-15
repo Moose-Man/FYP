@@ -9,6 +9,15 @@ import numpy as np
 # Functions
 ###############################################################################
 
+def init_net(net, gpu_ids, init_type='xavier', init_gain=0.02):
+    """Convenience wrapper: weight-init + move to first GPU."""
+    if gpu_ids:
+        assert torch.cuda.is_available()
+        net.to(torch.device('cuda', gpu_ids[0]))
+    else:
+        net.cpu()
+    init_weights(net, init_type)
+    return net
 
 
 def weights_init_normal(m):
@@ -115,7 +124,7 @@ def define_G(input_nc, output_nc, ngf, which_model_netG, norm='batch', use_dropo
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % which_model_netG)
     if len(gpu_ids) > 0:
-        netG.cuda(device_id=gpu_ids[0])
+        netG.cuda(gpu_ids[0])
     init_weights(netG, init_type=init_type)
     return netG
 
@@ -136,7 +145,7 @@ def define_D(input_nc, ndf, which_model_netD,
         raise NotImplementedError('Discriminator model name [%s] is not recognized' %
                                   which_model_netD)
     if use_gpu:
-        netD.cuda(device_id=gpu_ids[0])
+        netD.cuda(gpu_ids[0])
     init_weights(netD, init_type=init_type)
     return netD
 
@@ -167,7 +176,7 @@ class GANLoss(nn.Module):
         self.real_label_var = None
         self.fake_label_var = None
         self.Tensor = tensor
-        self.loss = nn.BCELoss()
+        self.loss = nn.BCEWithLogitsLoss()
 
     def get_target_tensor(self, input, target_is_real):
         target_tensor = None

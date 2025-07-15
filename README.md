@@ -13,8 +13,8 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |               |    ✓     | 16.54  | 0.3388  |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
-| **PAN**             |               |          |        |         |
-|                     |               |    ✓     |        |         |
+| **PAN**             |               |          |  21.50  | 0.3944  |
+|                     |               |    ✓     |  20.69  | 0.3710  |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 
@@ -55,4 +55,41 @@ Command used to generate images (test.py has been altered to only provide a sing
 ```
 python test.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_baseline --input_nc 3 --output_nc 3 --phase test --serial_batches --num_test 977 --epoch latest --ngf 32 --ndf 32 --nef 32 --n_samples 1
 ```
+
+### adjustments: PAN
+
+Training schedule
+• 20 epochs + 10 epoch LR-decay (--niter 20 --niter_decay 10)
+
+Batch & resolution
+• Batch = 2 (vs 4) • Patch = 128² (--loadSize 128 --fineSize 128)
+
+Generator / Discriminator widths
+• --which_model_netG unet_128 (64→128 U-Net depth) 
+• ndf/ngf kept at 64 (defaults)
+
+GAN loss
+• Kept default LSGAN (--no_lsgan omitted) to avoid BCE‐logit crash on new PyTorch.
+
+Weight initialisation
+• Restored helper init_net() and added flag --init_gain 0.02 (default).
+
+STN branch 
+• Added STN() module; enable with --lambda_stn 4 (value > 0 activates STN module). 
+• STN is initialised & moved to GPU inside pan_model.py.
+
+Windows stability
+• Forced single-process dataloader (--nThreads 0).
+
+Deprecation fixes
+• Replaced deprecated np.float, .cuda(device_id=…), and old weight-init calls.
+
+Test-time convenience
+• Custom script test_singleoutput.py
+– inserts repo path into sys.path
+– loads netG only
+– saves one fake_B per input, same filename+ext
+– works with dataset_mode aligned and --nThreads 0.
+
+
 

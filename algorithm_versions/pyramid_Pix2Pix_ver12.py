@@ -36,7 +36,30 @@ checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pi
 
 os.makedirs(checkpoint_dir, exist_ok=True)
 
+# --- 100 % deterministic run (comment out for stochastic run) -----------------------------------------------
+import os, random, numpy as np, torch
 
+SEED = 42                    # choose any int you like
+
+def set_deterministic(seed: int = 42):
+    # 1) Python, NumPy, PyTorch RNGs
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)        # current GPU
+    torch.cuda.manual_seed_all(seed)    # all GPUs (DP / DDP)
+
+    # 2) Force deterministic algorithms -- PyTorch ≥1.12
+    torch.use_deterministic_algorithms(True, warn_only=False)
+
+    # 3) cuDNN & cuBLAS
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark     = False
+    # cuBLAS (only needed for some GPUs; harmless otherwise)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+
+set_deterministic(SEED)
+# ---------------------------------------------------------------------------
 
 # for viewing sample output
 def show_tensor_image(tensor):
@@ -119,7 +142,10 @@ dataset = BCIDataset(
     ihc_dir=ihc_train_path,
     transform=transform
 )
-dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+# shuffle = False for deterministic run, shuffle = False for stochastic run
+dataloader = DataLoader(dataset, batch_size=2, shuffle=False)
+# dataloader = DataLoader(dataset, batch_size=2, shuffle=True) 
 
 # weight_init
 def init_weights(net, init_type="normal", gain=0.02):
@@ -171,7 +197,7 @@ class ResNetGenerator(nn.Module):
         super(ResNetGenerator, self).__init__()
 
         self.initial = nn.Sequential(
-            nn.Conv2d(input_channels, 64, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
+            nn.Conv2d(input_channels, 64, kernel_size=7, stride=1, padding=3, padding_mode='replicate'),
             nn.InstanceNorm2d(64),
             nn.ReLU(inplace=True)
         )
@@ -189,7 +215,7 @@ class ResNetGenerator(nn.Module):
         )
 
         self.final = nn.Sequential(
-            nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='reflect'),
+            nn.Conv2d(64, output_channels, kernel_size=7, stride=1, padding=3, padding_mode='replicate'),
             nn.Identity()
         )
 
@@ -267,7 +293,7 @@ def gaussian_blur(img: torch.Tensor) -> torch.Tensor:
                            device=img.device) / 16.0
     kernel = kernel.expand(img.size(1), 1, 3, 3)        # (C,1,3,3)
 
-    img = F.pad(img, (1, 1, 1, 1), mode='reflect')       # L,R,T,B
+    img = F.pad(img, (1, 1, 1, 1), mode='replicate')       # L,R,T,B
     blurred = F.conv2d(img, kernel, stride=1,
                        padding=0, groups=img.size(1))
     return blurred

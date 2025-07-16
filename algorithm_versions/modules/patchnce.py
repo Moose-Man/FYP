@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import random
 
 ###############################################################################
 # Original PatchNCE loss — *identical* to the one already sitting in ver11.py #
@@ -70,30 +69,26 @@ class PatchNCELoss(nn.Module):
         feat_q = feat_q.permute(0, 2, 1).reshape(-1, C)
         feat_k = feat_k.permute(0, 2, 1).reshape(-1, C)
 
-        # Positive logits: dot-product with own positive key
-        l_pos = (feat_q * feat_k).sum(dim=1, keepdim=True)  # [N_total, 1]
-
-        # Build negative pool (all keys)
+        # ------------------------------------------------------------------
+        # Build a single [N_total, num_negatives] table of random indices
+        # ------------------------------------------------------------------
         with torch.no_grad():
-            # indices of all patches except self
-            all_idx = torch.arange(N_total, device=feat_q.device)
-            neg_indices = []
-            for i in range(N_total):
-                choices = torch.cat((all_idx[:i], all_idx[i+1:]))
-                # random.sample is on cpu; use torch.randint for speed
-                rand_ids = torch.randint(
-                    0, choices.size(0),
-                    (self.num_negatives,),
-                    device=feat_q.device)
-                neg_indices.append(choices[rand_ids])
-            neg_indices = torch.stack(neg_indices)           # [N_total, num_negatives]
+            # For each query position i produce j ≠ i
+            rand = torch.randint(
+                1, N_total, (N_total, self.num_negatives), device=feat_q.device
+            )
+            neg_indices = (torch.arange(N_total, device=feat_q.device)
+                        .unsqueeze(1) + rand) % N_total
+            #   Formula guarantees j ≠ i because offset ∈ [1, N_total-1]
 
-        # Gather negative keys and compute logits
-        feat_k_exp = feat_k[neg_indices]                     # [N_total, num_neg, C]
-        l_neg = torch.bmm(
-            feat_q.unsqueeze(1),                             # [N_total, 1, C]
-            feat_k_exp.permute(0, 2, 1)                      # [N_total, C, num_neg]
-        ).squeeze(1)                                         # [N_total, num_neg]
+        # Gather all negative keys in a single batched op
+        feat_k_exp = feat_k[neg_indices]          # [N_total, num_neg, C]   (GPU gather)
+
+        # Positive & negative logits
+        l_pos = (feat_q * feat_k).sum(dim=1, keepdim=True)            # [N_total, 1]
+        l_neg = torch.bmm(                                            # [N_total, num_neg]
+                feat_q.unsqueeze(1), feat_k_exp.permute(0, 2, 1)
+            ).squeeze(1)
 
         # Concatenate – positives first
         logits = torch.cat([l_pos, l_neg], dim=1) / self.temperature

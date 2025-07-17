@@ -5,10 +5,10 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 
 | Model               | With PatchNCE | With STN | PSNR   | SSIM    |
 |---------------------|:-------------:|:--------:|:------:|:-------:|
-| **pyramidPix2Pix**  |               |          | 19.27  | 0.3480  |
-|                     |               |    ✓     | 19.97  | 0.4022  |
-|                     |      ✓        |          |        |         |
-|                     |      ✓        |    ✓     |        |         |
+| **pyramidPix2Pix**  |               |          |        |   |
+|                     |               |    ✓     | 19.98  | 0.4299  |
+|                     |      ✓        |          |  20.15 | 0.3870  |
+|                     |      ✓        |    ✓     |  19.52 | 0.4259 |
 | **BiCycleGAN**      |               |          | 16.27  | 0.3249  |
 |                     |               |    ✓     | 16.54  | 0.3388  |
 |                     |      ✓        |          |        |         |
@@ -19,6 +19,8 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |      ✓        |    ✓     |        |         |
 
 ### adjustments: pyramidPix2Pix
+
+Model has been edited to be purely deterministic for testing purposes (see pyramid_pix2pix_ver12.py)
 
 Reduced Epoch Count & Adjusted Learning Rate
 • Training epochs were cut from 100 down to 50.

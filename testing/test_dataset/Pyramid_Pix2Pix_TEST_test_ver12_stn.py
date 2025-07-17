@@ -18,7 +18,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 epoch_chosen = 50
 
-checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_12"
+checkpoint_dir = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\new_checkpoints\ver_12_stn"
 
 he_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\HE_resized_nocrop\test"
 
@@ -26,10 +26,10 @@ he_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_
 ihc_resized_test_path = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\IHC_resized_nocrop\test"
 
 # save path for generated images for test dataset
-image_save_path_test = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\ver_12"
+image_save_path_test = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\ver_12_stn"
 
 # save path for test dataset graphs
-graph_save_path_test = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\metric_graphs\ver_12"
+graph_save_path_test = r"C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\test_results\test_dataset\metric_graphs\ver_12_stn"
 
 os.makedirs(image_save_path_test, exist_ok=True)
 os.makedirs(graph_save_path_test, exist_ok=True)

@@ -5,7 +5,7 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 
 | Model               | With PatchNCE | With STN | PSNR   | SSIM    |
 |---------------------|:-------------:|:--------:|:------:|:-------:|
-| **pyramidPix2Pix**  |               |          |        |   |
+| **pyramidPix2Pix**  |               |          |  19.24  | 0.3825 |
 |                     |               |    ✓     | 19.98  | 0.4299  |
 |                     |      ✓        |          |  20.15 | 0.3870  |
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |

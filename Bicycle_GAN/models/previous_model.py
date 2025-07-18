@@ -2,33 +2,18 @@ import torch
 from .base_model import BaseModel
 from . import networks
 from .stn import STN
-from .patchnce import PatchEncoder, PatchNCELoss            
 import torch.nn.functional as F
 
 class BiCycleGANModel(BaseModel):
     def __init__(self, opt):
-        BaseModel.__init__(self, opt)
-        # -------------------------------- PatchNCE --------------------------------
-        if opt.lambda_nce > 0:
-            self.netPatch = networks.init_net(
-                PatchEncoder(in_ch=opt.output_nc),
-                gpu_ids=self.gpu_ids,
-                init_type=opt.init_type, init_gain=opt.init_gain)
-            self.criterionNCE = PatchNCELoss(opt.temperature_nce,
-                                            opt.num_negatives_nce)
-        else:
-            from .patchnce import IdentityPatchNCELoss
-            self.criterionNCE = IdentityPatchNCELoss()
-
         if opt.isTrain:
             assert opt.batch_size % 2 == 0  # load two images at one time.
 
+        BaseModel.__init__(self, opt)
         # specify the training losses you want to print out.
         self.loss_names = ['G_GAN', 'D', 'G_GAN2', 'D2', 'G_L1', 'z_L1', 'kl']
         if opt.lambda_stn > 0:
             self.loss_names.append('stn')
-        if opt.lambda_nce > 0:                
-            self.loss_names.append('nce')
         # specify the images you want to save/display. The program will call base_model.get_current_visuals
         self.visual_names = ['real_A_encoded', 'real_B_encoded', 'fake_B_random', 'fake_B_encoded']
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
@@ -37,8 +22,6 @@ class BiCycleGANModel(BaseModel):
         use_E = opt.isTrain or not opt.no_encode
         use_vae = True
         self.model_names = ['G']
-        if opt.lambda_nce > 0:             
-            self.model_names.append('Patch')
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.nz, opt.ngf, netG=opt.netG,
                                       norm=opt.norm, nl=opt.nl, use_dropout=opt.use_dropout, init_type=opt.init_type, init_gain=opt.init_gain,
                                       gpu_ids=self.gpu_ids, where_add=opt.where_add, upsample=opt.upsample)
@@ -61,17 +44,10 @@ class BiCycleGANModel(BaseModel):
         # --- STN: if turned on, create it and add its params to G’s optimizer ---
         if opt.lambda_stn > 0:
             self.model_names.append('STN')
-            self.netSTN = networks.init_net(
-                STN(), gpu_ids=self.gpu_ids,
-                init_type=opt.init_type, init_gain=opt.init_gain
-            )
+            self.netSTN = networks.init_net(STN(), gpu_ids=self.gpu_ids, init_type=opt.init_type, init_gain=opt.init_gain)
             paramsG = list(self.netG.parameters()) + list(self.netSTN.parameters())
         else:
             paramsG = list(self.netG.parameters())
-
-        # — if PatchNCE is enabled, include its encoder in the G optimizer —
-        if opt.lambda_nce > 0:
-            paramsG += list(self.netPatch.parameters())
 
         if opt.isTrain:
             self.criterionGAN = networks.GANLoss(gan_mode=opt.gan_mode).to(self.device)
@@ -141,12 +117,6 @@ class BiCycleGANModel(BaseModel):
         self.fake_B_encoded = self.netG(self.real_A_encoded, self.z_encoded)
         # generate fake_B_random
         self.fake_B_random = self.netG(self.real_A_encoded, self.z_random)
-
-        if self.opt.lambda_nce > 0:
-            self.feat_q = self.netPatch(self.fake_B_encoded)
-            with torch.no_grad():
-                self.feat_k = self.netPatch(self.real_B_encoded)
-
         if self.opt.conditional_D:
             self.fake_data_encoded = torch.cat([self.real_A_encoded, self.fake_B_encoded], 1)
             self.real_data_encoded = torch.cat([self.real_A_encoded, self.real_B_encoded.detach()], 1)
@@ -206,19 +176,17 @@ class BiCycleGANModel(BaseModel):
             # (3) masked mean-absolute-error
             self.loss_G_L1 = (diff * m).sum() / (m.sum() + 1e-6)
             self.loss_G_L1 *= self.opt.lambda_L1
+
+
         else:
             self.loss_G_L1 = 0.0
 
-        # 4. PatchNCE contrastive loss
-        if self.opt.lambda_nce > 0:
-            self.loss_nce = self.criterionNCE(self.feat_q, self.feat_k) * self.opt.lambda_nce
-        else:
-            self.loss_nce = 0.0
-        self.loss_G = (self.loss_G_GAN + self.loss_G_GAN2 + self.loss_G_L1 +
-                    self.loss_kl + getattr(self, 'loss_stn', 0.0) +
-                    getattr(self, 'loss_nce', 0.0))
-
-     
+        # combine GAN, L1, KL … *and* STN
+        self.loss_G = (self.loss_G_GAN
+                     + self.loss_G_GAN2
+                     + self.loss_G_L1
+                     + self.loss_kl
+                     + getattr(self, 'loss_stn', 0.0))        
         
         self.loss_G.backward(retain_graph=True)
 
@@ -289,5 +257,4 @@ class BiCycleGANModel(BaseModel):
 
         # 4) Update discriminators
         self.update_D()
-
 

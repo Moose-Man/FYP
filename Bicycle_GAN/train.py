@@ -18,8 +18,27 @@ from data import create_dataset
 from models import create_model
 from util.visualizer import Visualizer
 
+import os
+import random
+import numpy as np
+import torch
+
+# ─── make CuBLAS deterministic (PyTorch ≥1.8) ────────────────────────
+os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
+
+    # ─── seed every RNG ────────────────────────────────────────────
+    import random, numpy as np, torch
+    random.seed(opt.seed)
+    np.random.seed(opt.seed)
+    torch.manual_seed(opt.seed)
+    torch.cuda.manual_seed_all(opt.seed)
+
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset_size = len(dataset)    # get the number of images in the dataset.
     print('The number of training images = %d' % dataset_size)

@@ -16,6 +16,11 @@ class BaseOptions():
         It also implements several helper functions such as parsing, printing, and saving the options.
         It also gathers additional options defined in <modify_commandline_options> functions in both dataset class and model class.
         """
+
+        parser.add_argument('--lambda_nce', type=float, default=0.0, help='weight for PatchNCE contrastive loss (0 ⇒ OFF)')
+        parser.add_argument('--temperature_nce', type=float, default=0.07)
+        parser.add_argument('--num_negatives_nce', type=int, default=128)
+
         parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
         parser.add_argument('--batch_size', type=int, default=2, help='input batch size')
         parser.add_argument('--load_size', type=int, default=286, help='scale images to this size')
@@ -49,6 +54,8 @@ class BaseOptions():
         parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')
         parser.add_argument('--upsample', type=str, default='basic', help='basic | bilinear')
         parser.add_argument('--nl', type=str, default='relu', help='non-linearity activation: relu | lrelu | elu')
+        
+        parser.add_argument('--seed', type=int, default=42, help='random seed for torch, numpy, python; change for multiple runs')
 
         # extra parameters
         parser.add_argument('--where_add', type=str, default='all', help='input|all|middle; where to add z in the network G')

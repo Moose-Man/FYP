@@ -9,12 +9,12 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |               |    ✓     | 19.98  | 0.4299  |
 |                     |      ✓        |          |  20.15 | 0.3870  |
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |
-| **BiCycleGAN**      |               |          | 16.27  | 0.3249  |
-|                     |               |    ✓     | 16.54  | 0.3388  |
+| **BiCycleGAN**      |               |          |   |  |
+|                     |               |    ✓     |   |  |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
-| **PAN**             |               |          |  21.50  | 0.3944  |
-|                     |               |    ✓     |  20.23  | 0.3827  |
+| **PAN**             |               |          |   |   |
+|                     |               |    ✓     |   |   |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 
@@ -51,7 +51,11 @@ Upsample-to-256 Training Resolution
 
 Commmand used to train:
 ```
-python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_baseline --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 2 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5
+python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_stn+patchnce --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 2 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5 --lambda_stn 4 --lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128
+
+#omit lines 'lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128' to disable patchnce
+#omit line 'lambda_stn 4' to disable stn
+#ensure model names are changed if training multiple variations to avoid checkpoint overwrites
 ```
 Command used to generate images (test.py has been altered to only provide a single sample output image of matching filenames with the test dataset)
 ```

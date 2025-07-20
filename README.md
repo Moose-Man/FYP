@@ -10,7 +10,7 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |      ✓        |          |  20.15 | 0.3870  |
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |
 | **BiCycleGAN**      |               |          |  16.92  | 0.3502 |
-|                     |               |    ✓     |  16.79 |  0.4954 |
+|                     |               |    ✓     |   |   |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 | **PAN**             |               |          |  19.63 |  0.3359  |
@@ -40,6 +40,27 @@ PatchNCE Encoder Downsizing
 
 ### adjustments: BiCycleGAN
 
+fixed seed initialization
+during training:
+```
+# Ensures that even inherently nondeterministic CUDA/CUDNN algorithms (convolutions, grid-sample, matrix multiplies, etc.) behave deterministically
+os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+random.seed(opt.seed) # fixes any use of python's built in RNG
+np.random.seed(opt.seed) # fixes any use np.python's built in RNG
+torch.manual_seed(opt.seed) # fixes all CPU side RNG
+torch.cuda.manual_seed_all(opt.seed) # fixes all GPU side RNG
+```
+during testing:
+```
+torch.manual_seed(opt.seed)
+np.random.seed(opt.seed)
+random.seed(opt.seed)
+```
+
 Reduced Epoch Count
 • Training epochs were cut from 200 to 30.
 
@@ -63,6 +84,28 @@ python test.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyrami
 ```
 
 ### adjustments: PAN
+
+fixed seed initialization
+during training:
+```
+random.seed(opt.seed) # fixes any use of python's built in RNG
+np.random.seed(opt.seed) # fixes any use np.python's built in RNG
+torch.manual_seed(opt.seed) # fixes all CPU side RNG
+torch.cuda.manual_seed_all(opt.seed) # fixes all GPU side RNG
+
+# Ensures that even inherently nondeterministic CUDA/CUDNN algorithms (convolutions, grid-sample, matrix multiplies, etc.) behave deterministically
+os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+```
+during testing:
+```
+random.seed(opt.seed)
+np.random.seed(opt.seed)
+torch.manual_seed(opt.seed)
+torch.cuda.manual_seed_all(opt.seed)
+```
 
 Training schedule
 • 20 epochs + 10 epoch LR-decay (--niter 20 --niter_decay 10)
@@ -106,5 +149,6 @@ command used to test:
 ```
 python test_singleoutput.py --dataroot C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\PANdataset --dataset_mode aligned --name pan_baseline --model pan --which_direction AtoB --which_model_netG unet_128 --phase test --which_epoch latest --loadSize 128 --fineSize 128 --results_dir results_single --nThreads 0
 ```
+
 
 

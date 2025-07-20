@@ -9,8 +9,8 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |               |    ✓     | 19.98  | 0.4299  |
 |                     |      ✓        |          |  20.15 | 0.3870  |
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |
-| **BiCycleGAN**      |               |          |   |  |
-|                     |               |    ✓     |   |  |
+| **BiCycleGAN**      |               |          |  16.92  | 0.3502 |
+|                     |               |    ✓     |  16.79 |  0.4954 |
 |                     |      ✓        |          |        |         |
 |                     |      ✓        |    ✓     |        |         |
 | **PAN**             |               |          |   |   |
@@ -51,7 +51,7 @@ Upsample-to-256 Training Resolution
 
 Commmand used to train:
 ```
-python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_stn+patchnce --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 2 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5 --lambda_stn 4 --lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128
+python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_stn+patchnce --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 36 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5 --lambda_stn 4 --lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128 --gpu_ids 0
 
 #omit lines 'lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128' to disable patchnce
 #omit line 'lambda_stn 4' to disable stn
@@ -97,5 +97,14 @@ Test-time convenience
 – saves one fake_B per input, same filename+ext
 – works with dataset_mode aligned and --nThreads 0.
 
+command used to train:
+```
+python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\PANdataset" --dataset_mode aligned --model pan --name pan_stn --which_direction AtoB --which_model_netG unet_128 --input_nc 3 --output_nc 3 --loadSize 128 --fineSize 128 --batchSize 2 --nThreads 0 --niter 20 --niter_decay 10 --pan_lambdas 5 1 1 1 5 --print_freq 100 --save_epoch_freq 5 --display_id -1 --lambda_stn 4 --init_gain 0.02
+```
+
+command used to test:
+```
+python test_singleoutput.py --dataroot C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\PANdataset --dataset_mode aligned --name pan_baseline --model pan --which_direction AtoB --which_model_netG unet_128 --phase test --which_epoch latest --loadSize 128 --fineSize 128 --results_dir results_single --nThreads 0
+```
 
 

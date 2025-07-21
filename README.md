@@ -11,12 +11,8 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |
 | **BiCycleGAN**      |               |          |  16.92  | 0.3502 |
 |                     |               |    ✓     |  17.56 |  0.3652 |
-|                     |      ✓        |          |        |         |
-|                     |      ✓        |    ✓     |        |         |
 | **PAN**             |               |          |  19.63 |  0.3359  |
-|                     |               |    ✓     |  18.16 |  0.3504 |
-|                     |      ✓        |          |        |         |
-|                     |      ✓        |    ✓     |        |         |
+|                     |               |    ✓     |  18.75 |  0.3452 |
 
 ### adjustments: pyramidPix2Pix
 

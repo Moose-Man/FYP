@@ -36,6 +36,12 @@ PatchNCE Encoder Downsizing
 
 ### adjustments: BiCycleGAN
 
+STN warp clamp (also present in pyramidpix2pix implementations)
+• Important to prevent the STN from warping the image too severely for meaninful training
+```
+delta = (raw_theta - id_theta).clamp(-0.2, +0.2)
+```
+
 fixed seed initialization
 during training:
 ```
@@ -80,6 +86,12 @@ python test.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyrami
 ```
 
 ### adjustments: PAN
+
+STN warp clamp
+• Important to prevent the STN from warping the image too severely for meaninful training
+```
+delta = (raw_theta - id_theta).clamp(-0.2, +0.2)
+```
 
 fixed seed initialization
 during training:

@@ -9,8 +9,8 @@ Predicting IHC Images from H&;E Images for Breast Cancer
 |                     |               |    ✓     | 19.98  | 0.4299  |
 |                     |      ✓        |          |  20.15 | 0.3870  |
 |                     |      ✓        |    ✓     |  19.52 | 0.4259 |
-| **BiCycleGAN**      |               |          |  16.92  | 0.3502 |
-|                     |               |    ✓     |  17.56 |  0.3652 |
+| **BiCycleGAN**      |               |          |  16.99  | 0.3539 |
+|                     |               |    ✓     |  17.64 |  0.3685 |
 | **PAN**             |               |          |  19.63 |  0.3359  |
 |                     |               |    ✓     |  18.75 |  0.3452 |
 
@@ -74,7 +74,7 @@ Upsample-to-256 Training Resolution
 
 Commmand used to train:
 ```
-python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_stn+patchnce --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 36 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5 --lambda_stn 4 --lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128 --gpu_ids 0
+python train.py --dataroot "--dataroot C:\Users\..." --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_stn+patchnce --input_nc 3 --output_nc 3 --load_size 286 --crop_size 256 --ngf 32 --ndf 32 --nef 32 --batch_size 36 --niter 20 --niter_decay 10 --display_id -1 --print_freq 100 --display_freq 400 --update_html_freq 400 --save_epoch_freq 5 --lambda_stn 4 --lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128 --gpu_ids 0
 
 #omit lines 'lambda_nce 0.55 --temperature_nce 0.085 --num_negatives_nce 128' to disable patchnce
 #omit line 'lambda_stn 4' to disable stn
@@ -82,7 +82,7 @@ python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyram
 ```
 Command used to generate images (test.py has been altered to only provide a single sample output image of matching filenames with the test dataset)
 ```
-python test.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset" --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_baseline --input_nc 3 --output_nc 3 --phase test --serial_batches --num_test 977 --epoch latest --ngf 32 --ndf 32 --nef 32 --n_samples 1
+python test.py --dataroot "--dataroot C:\Users\..." --dataset_mode aligned --model bicycle_gan --name he2ihc_bicycle_baseline --input_nc 3 --output_nc 3 --phase test --serial_batches --num_test 977 --epoch latest --ngf 32 --ndf 32 --nef 32 --n_samples 1
 ```
 
 ### adjustments: PAN
@@ -150,12 +150,12 @@ Test-time convenience
 
 command used to train:
 ```
-python train.py --dataroot "C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\PANdataset" --dataset_mode aligned --model pan --name pan_stn --which_direction AtoB --which_model_netG unet_128 --input_nc 3 --output_nc 3 --loadSize 128 --fineSize 128 --batchSize 2 --nThreads 0 --niter 20 --niter_decay 10 --pan_lambdas 5 1 1 1 5 --print_freq 100 --save_epoch_freq 5 --display_id -1 --lambda_stn 4 --init_gain 0.02
+python train.py --dataroot "--dataroot C:\Users\..." --dataset_mode aligned --model pan --name pan_stn --which_direction AtoB --which_model_netG unet_128 --input_nc 3 --output_nc 3 --loadSize 128 --fineSize 128 --batchSize 2 --nThreads 0 --niter 20 --niter_decay 10 --pan_lambdas 5 1 1 1 5 --print_freq 100 --save_epoch_freq 5 --display_id -1 --lambda_stn 4 --init_gain 0.02 
 ```
 
 command used to test:
 ```
-python test_singleoutput.py --dataroot C:\Users\user\Desktop\Uni_work\year_3\FYP\code\Pyramid_Pix2Pix\BCI_dataset\PANdataset --dataset_mode aligned --name pan_baseline --model pan --which_direction AtoB --which_model_netG unet_128 --phase test --which_epoch latest --loadSize 128 --fineSize 128 --results_dir results_single --nThreads 0
+python test_singleoutput.py --dataroot C:\Users\... --dataset_mode aligned --name pan_baseline --model pan --which_direction AtoB --which_model_netG unet_128 --phase test --which_epoch latest --loadSize 128 --fineSize 128 --results_dir results_single --nThreads 0 --no_flip 
 ```
 
 
